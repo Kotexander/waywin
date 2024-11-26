@@ -5,11 +5,6 @@ use windows_sys::Win32::{Foundation::*, UI::WindowsAndMessaging::*};
 
 const WM_WW_DESTROY: u32 = WM_USER + 1;
 
-// #[derive(Debug, Default)]
-// pub struct WindowState {
-//     scale_factor: f64,
-// }
-
 pub struct WindowData {
     /// should only be dereferenced in wndproc
     event_hook: *mut EventHook,
@@ -117,7 +112,6 @@ fn extract_info(hwnd: HWND, msg: u32, lparam: LPARAM) -> *const WindowData {
 }
 
 fn translate_event(
-    // info: &InitData,
     window: HWND,
     message: u32,
     wparam: WPARAM,
@@ -128,11 +122,11 @@ fn translate_event(
         WM_SIZE => {
             let w = loword(lparam as usize) as u32;
             let h = hiword(lparam as usize) as u32;
-            (Some(Event::Resize(w, h)), false)
+            (Some(Event::Resize(w, h)), true)
         }
         WM_PAINT => {
             validate_rect(window);
-            (Some(Event::Paint), false)
+            (Some(Event::Paint), true)
         }
         WM_DPICHANGED => {
             let rect = unsafe { &*(lparam as *const RECT) };
@@ -147,7 +141,7 @@ fn translate_event(
                 Some(Event::NewScaleFactor(
                     to_scale_factor(loword(wparam) as u32),
                 )),
-                false,
+                true,
             )
         }
         WM_WW_DESTROY => {
@@ -155,11 +149,11 @@ fn translate_event(
             if let Err(err) = destroy_window(window) {
                 log::error!("error during destroy window: {err}");
             }
-            return (None, true);
+            (None, true)
         }
         _ => {
             // log::info!("msg: {message}");
-            return (None, false);
+            (None, false)
         }
     }
 }

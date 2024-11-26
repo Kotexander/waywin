@@ -21,14 +21,12 @@ static WAYWIN_INIT: AtomicBool = AtomicBool::new(false);
 /// Used to create windows and run the event runner.
 pub struct Waywin {
     backend_impl: backend_impl::Waywin,
-    /// Not "thread safe" because each window's events are sent to the same thread that created the window on Windows.
-    /// So, the event runner won't receive events if it is run on a different thread.
     _marker: PhantomData<*const ()>, // not `Send` or `Sync`
 }
 impl Waywin {
     pub fn init(class_name: &str) -> Result<Self, String> {
         if WAYWIN_INIT.swap(true, Ordering::Relaxed) {
-            return Err("Only one creation of Waywin can be attempted".to_string());
+            return Err("Waywin::init can only be called once".to_string());
         }
 
         backend_impl::Waywin::init(class_name).map(|backend_impl| Self {
@@ -41,7 +39,7 @@ impl Waywin {
             .map(|backend_impl| Window { backend_impl })
     }
     pub fn exit(&self) {
-        self.backend_impl.exit();
+        self.backend_impl.exit()
     }
     pub fn run(&self, event_hook: impl FnMut(WindowEvent)) {
         self.backend_impl.run(event_hook)
