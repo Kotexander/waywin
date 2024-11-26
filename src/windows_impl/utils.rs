@@ -47,9 +47,13 @@ pub type WNDPROC = unsafe extern "system" fn(*mut c_void, u32, usize, isize) -> 
 pub fn loword(l: usize) -> usize {
     l & 0xffff
 }
-pub fn hiword(l: usize) -> usize {
-    (l >> 16) & 0xffff
+pub fn hiword(h: usize) -> usize {
+    (h >> 16) & 0xffff
 }
+pub fn rgb(r: u8, g: u8, b: u8) -> u32 {
+    (r as u32) | ((g as u32) << 8) | ((b as u32) << 16)
+}
+
 pub fn instance() -> HINSTANCE {
     // TODO:
     // https://devblogs.microsoft.com/oldnewthing/20041025-00/?p=37483
@@ -148,8 +152,27 @@ pub fn send_message(hwnd: HWND, msg: u32, wparam: usize, lparam: isize) -> LRESU
     unsafe { SendMessageW(hwnd, msg, wparam, lparam) }
 }
 
+/// https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createsolidbrush
+pub fn create_brush(r: u8, g: u8, b: u8) -> HBRUSH {
+    unsafe { CreateSolidBrush(rgb(r, g, b)) }
+}
+/// https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-deleteobject
+pub fn delete_object(ho: HGDIOBJ) -> std::result::Result<(), ()> {
+    unsafe {
+        if DeleteObject(ho) == 0 {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerclassexw
-pub fn register_class(class_name: PCWSTR, wndproc: Option<WNDPROC>) -> Result<NonZero<u16>> {
+pub fn register_class(
+    class_name: PCWSTR,
+    wndproc: Option<WNDPROC>,
+    background: HBRUSH,
+) -> Result<NonZero<u16>> {
     let win_class = WNDCLASSEXW {
         cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
         style: CS_HREDRAW | CS_VREDRAW,
@@ -159,7 +182,7 @@ pub fn register_class(class_name: PCWSTR, wndproc: Option<WNDPROC>) -> Result<No
         hInstance: instance(),
         hIcon: null_mut(),
         hCursor: null_mut(),
-        hbrBackground: (COLOR_WINDOW + 1) as _,
+        hbrBackground: background,
         lpszMenuName: null(),
         lpszClassName: class_name,
         hIconSm: null_mut(),

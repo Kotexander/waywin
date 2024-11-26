@@ -4,7 +4,7 @@ mod window;
 use crate::event::WindowEvent;
 use std::{cell::Cell, ptr::null_mut};
 use utils::*;
-use windows_sys::Win32::UI::WindowsAndMessaging::*;
+use windows_sys::Win32::{Graphics::Gdi::HBRUSH, UI::WindowsAndMessaging::*};
 
 pub use window::Window;
 
@@ -12,12 +12,18 @@ pub type EventHook = Option<Box<dyn FnMut(WindowEvent)>>;
 
 struct WindowClass {
     name: Vec<u16>,
+    _background: HBRUSH,
 }
 impl WindowClass {
     fn new(name: &str) -> Result<Self, String> {
         let name = to_wide_str(name);
-        register_class(name.as_ptr(), Some(window::wndproc)).map_err(|err| err.message())?;
-        Ok(Self { name })
+        let background = create_brush(0, 0, 0);
+        register_class(name.as_ptr(), Some(window::wndproc), background)
+            .map_err(|err| err.message())?;
+        Ok(Self {
+            name,
+            _background: background,
+        })
     }
     // fn as_string(&self) -> String {
     //     from_wide_str(&self.name)
@@ -30,10 +36,13 @@ impl WindowClass {
 //     fn drop(&mut self) {
 //         if let Err(err) = unregister_class(self.name.as_ptr()) {
 //             log::error!(
-//                 "Failed to to unregister class '{}': {}",
+//                 "Failed to unregister class '{}': {}",
 //                 from_wide_str(&self.name),
 //                 err
 //             );
+//         }
+//         if let Err(_) = delete_object(self.background) {
+//             log::error!("Failed to deleted background brush");
 //         }
 //     }
 // }
@@ -79,12 +88,5 @@ impl std::fmt::Debug for Waywin {
             // .field("event_hook", &self.event_hook)
             // .field("class_name", &self.class_name)
             .finish_non_exhaustive()
-    }
-}
-impl Drop for Waywin {
-    fn drop(&mut self) {
-        // if let Err(err) = unregister_class(self.class_name.as_ptr()) {
-        //     log::error!("error during unregister class: {err}");
-        // }
     }
 }
