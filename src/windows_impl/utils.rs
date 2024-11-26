@@ -8,7 +8,7 @@ use windows_sys::{
     core::*,
     Win32::{
         Foundation::*,
-        Graphics::{Dwm::*, Gdi::*},
+        Graphics::Gdi::*,
         System::LibraryLoader::*,
         UI::{HiDpi::*, WindowsAndMessaging::*},
     },
@@ -27,19 +27,19 @@ macro_rules! error_on_false {
     };
 }
 
-macro_rules! error_on_not_ok {
-    ($expr: expr, $ok: expr) => {{
-        let hresult = $expr;
-        if $expr != S_OK {
-            Err(Error::from_hresult(windows_result::HRESULT(hresult)))
-        } else {
-            Ok($ok)
-        }
-    }};
-    ($expr: expr) => {
-        error_on_not_ok!($expr, ())
-    };
-}
+// macro_rules! error_on_not_ok {
+//     ($expr: expr, $ok: expr) => {{
+//         let hresult = $expr;
+//         if $expr != S_OK {
+//             Err(Error::from_hresult(windows_result::HRESULT(hresult)))
+//         } else {
+//             Ok($ok)
+//         }
+//     }};
+//     ($expr: expr) => {
+//         error_on_not_ok!($expr, ())
+//     };
+// }
 
 #[allow(clippy::upper_case_acronyms)]
 pub type WNDPROC = unsafe extern "system" fn(*mut c_void, u32, usize, isize) -> isize;
@@ -113,18 +113,18 @@ pub fn get_dpi(hwnd: HWND) -> u32 {
     unsafe { GetDpiForWindow(hwnd) }
 }
 
-/// https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmsetwindowattribute
-pub fn set_dark_mode(hwnd: HWND, mode: bool) -> Result<()> {
-    unsafe {
-        let mode = mode as BOOL;
-        error_on_not_ok!(DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
-            std::ptr::addr_of!(mode) as *const _,
-            std::mem::size_of::<BOOL>() as u32
-        ))
-    }
-}
+// /// https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmsetwindowattribute
+// pub fn set_dark_mode(hwnd: HWND, mode: bool) -> Result<()> {
+//     unsafe {
+//         let mode = mode as BOOL;
+//         error_on_not_ok!(DwmSetWindowAttribute(
+//             hwnd,
+//             DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
+//             std::ptr::addr_of!(mode) as *const _,
+//             std::mem::size_of::<BOOL>() as u32
+//         ))
+//     }
+// }
 
 /// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-redrawwindow
 pub fn redraw_window(hwnd: HWND) -> Result<()> {
@@ -159,7 +159,7 @@ pub fn register_class(class_name: PCWSTR, wndproc: Option<WNDPROC>) -> Result<No
         hInstance: instance(),
         hIcon: null_mut(),
         hCursor: null_mut(),
-        hbrBackground: unsafe { GetSysColorBrush(COLOR_WINDOW) },
+        hbrBackground: (COLOR_WINDOW + 1) as _,
         lpszMenuName: null(),
         lpszClassName: class_name,
         hIconSm: null_mut(),

@@ -31,9 +31,9 @@ impl Window {
         )
         .map_err(|err| err.message())?;
 
-        if let Err(err) = set_dark_mode(hwnd.as_ptr(), true) {
-            log::error!("{err}")
-        }
+        // if let Err(err) = set_dark_mode(hwnd.as_ptr(), true) {
+        //     log::error!("{err}")
+        // }
 
         Ok(Self {
             hwnd: hwnd.as_ptr() as usize,
