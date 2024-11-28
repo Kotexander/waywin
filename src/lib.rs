@@ -16,6 +16,7 @@ pub fn init(class_name: &str) -> Result<Waywin, String> {
     Waywin::init(class_name)
 }
 
+
 static WAYWIN_INIT: AtomicBool = AtomicBool::new(false);
 
 /// Used to create windows and run the event runner.

@@ -1,7 +1,7 @@
 use super::{utils::*, EventHook, Waywin};
 use crate::event::*;
 use raw_window_handle as rwh;
-use windows_sys::Win32::{Foundation::*, UI::WindowsAndMessaging::*};
+use windows_sys::Win32::{Foundation::*, System::SystemServices::*, UI::WindowsAndMessaging::*};
 
 const WM_WW_DESTROY: u32 = WM_USER + 1;
 
@@ -146,6 +146,23 @@ fn translate_event(
                 )),
                 true,
             )
+        }
+        WM_MOUSEMOVE => {
+            let x = loword(lparam as usize) as i16 as i32;
+            let y = hiword(lparam as usize) as i16 as i32;
+
+            let mods = wparam as u32;
+
+            let modifier = MouseModifier {
+                ctrl: mods & MK_CONTROL != 0,
+                lbtn: mods & MK_LBUTTON != 0,
+                rbtn: mods & MK_RBUTTON != 0,
+                shift: mods & MK_SHIFT != 0,
+                x1btn: mods & MK_XBUTTON1 != 0,
+                x2btn: mods & MK_XBUTTON1 != 0,
+            };
+
+            (Some(Event::MouseMoved((x, y), modifier)), true)
         }
         WM_WW_DESTROY => {
             // show_window(window, SW_HIDE);

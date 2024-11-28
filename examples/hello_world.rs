@@ -1,5 +1,5 @@
-use std::error::Error;
 use pollster::FutureExt;
+use std::error::Error;
 use utils::ColorClearer;
 use waywin::event::Event;
 
@@ -17,7 +17,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     window.show();
 
     waywin.run(|event| {
-        // log::info!("{:?}", event);
+        log::info!("{event:?}");
+
         match event.kind {
             Event::Close => {
                 waywin.exit();
