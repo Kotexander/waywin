@@ -40,36 +40,39 @@ impl Window {
             _info: info,
         })
     }
-
-    pub fn size(&self) -> (u32, u32) {
+    pub fn hwnd(&self) -> HWND {
+        self.hwnd as *mut _
+    }
+}
+impl Window {
+    pub fn get_size(&self) -> (u32, u32) {
         let rect = get_client_rect(self.hwnd()).unwrap();
         let (w, h) = get_size(rect);
         (w as u32, h as u32)
     }
-    pub fn pos(&self) -> (i32, i32) {
+    pub fn get_pos(&self) -> (i32, i32) {
         let rect = get_window_rect(self.hwnd()).unwrap();
         (rect.left, rect.top)
     }
-
+    pub fn get_mouse_pos(&self) -> (i32, i32) {
+        let point = screen_to_client(self.hwnd(), get_cursor_pos().unwrap()).unwrap();
+        (point.x, point.y)
+    }
+    pub fn get_scale_factor(&self) -> f64 {
+        to_scale_factor(get_dpi(self.hwnd()))
+    }
+}
+impl Window {
     pub fn show(&self) -> bool {
         show_window(self.hwnd(), SW_SHOWNORMAL)
     }
     pub fn hide(&self) -> bool {
         show_window(self.hwnd(), SW_HIDE)
     }
-
-    pub fn redraw(&self) {
+    pub fn request_redraw(&self) {
         if let Err(err) = redraw_window(self.hwnd()) {
             log::error!("{err}");
         }
-    }
-
-    pub fn get_scale_factor(&self) -> f64 {
-        to_scale_factor(get_dpi(self.hwnd()))
-    }
-
-    pub fn hwnd(&self) -> HWND {
-        self.hwnd as *mut _
     }
 }
 impl Drop for Window {

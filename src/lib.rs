@@ -50,15 +50,20 @@ pub struct Window {
     backend_impl: backend_impl::Window,
 }
 impl Window {
-    pub fn size(&self) -> (u32, u32) {
-        self.backend_impl.size()
+    pub fn get_size(&self) -> (u32, u32) {
+        self.backend_impl.get_size()
     }
-    pub fn pos(&self) -> (i32, i32) {
-        self.backend_impl.pos()
+    pub fn get_pos(&self) -> (i32, i32) {
+        self.backend_impl.get_pos()
     }
-    pub fn scale_factor(&self) -> f64 {
+    pub fn get_mouse_pos(&self) -> (i32, i32) {
+        self.backend_impl.get_mouse_pos()
+    }
+    pub fn get_scale_factor(&self) -> f64 {
         self.backend_impl.get_scale_factor()
     }
+}
+impl Window {
     pub fn show(&self) {
         self.backend_impl.show();
     }
@@ -66,7 +71,7 @@ impl Window {
         self.backend_impl.hide();
     }
     pub fn request_redraw(&self) {
-        self.backend_impl.redraw()
+        self.backend_impl.request_redraw()
     }
 }
 impl rwh::HasWindowHandle for Window {

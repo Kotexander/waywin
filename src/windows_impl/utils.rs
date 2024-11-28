@@ -63,9 +63,9 @@ pub fn instance() -> HINSTANCE {
 pub fn to_wide_str(str: &str) -> Vec<u16> {
     str.encode_utf16().chain(std::iter::once(0)).collect()
 }
-// pub fn from_wide_str(str: &[u16]) -> String {
-//     String::from_utf16_lossy(&str[..str.len() - 2])
-// }
+pub fn from_wide_str(str: &[u16]) -> String {
+    String::from_utf16_lossy(&str[..str.len() - 2])
+}
 pub fn to_scale_factor(dpi: u32) -> f64 {
     dpi as f64 / USER_DEFAULT_SCREEN_DPI as f64
 }
@@ -89,6 +89,14 @@ pub fn get_window_rect(hwnd: HWND) -> Result<RECT> {
         error_on_false!(GetWindowRect(hwnd, std::ptr::addr_of_mut!(rect)), rect)
     }
 }
+/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getcursorpos
+pub fn get_cursor_pos() -> Result<POINT> {
+    unsafe {
+        let mut point: POINT = std::mem::zeroed();
+        error_on_false!(GetCursorPos(std::ptr::addr_of_mut!(point)), point)
+    }
+}
+
 /// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos
 pub fn set_window_pos(hwnd: HWND, x: i32, y: i32, w: i32, h: i32) -> Result<()> {
     unsafe {
@@ -102,6 +110,11 @@ pub fn set_window_pos(hwnd: HWND, x: i32, y: i32, w: i32, h: i32) -> Result<()> 
             SWP_NOZORDER | SWP_NOACTIVATE,
         ))
     }
+}
+
+/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-screentoclient
+pub fn screen_to_client(hwnd: HWND, mut point: POINT) -> Result<POINT> {
+    unsafe { error_on_false!(ScreenToClient(hwnd, std::ptr::addr_of_mut!(point)), point) }
 }
 
 /// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setprocessdpiawarenesscontext

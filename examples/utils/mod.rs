@@ -30,7 +30,7 @@ impl<'a> ColorClearer<'a> {
             .await
             .ok_or_else(|| String::from("Failed to request adapter"))?;
 
-        let size = window.size();
+        let size = window.get_size();
         let capabilities = surface.get_capabilities(&adapter);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
