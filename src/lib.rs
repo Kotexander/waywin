@@ -2,10 +2,7 @@ pub mod event;
 
 use event::WindowEvent;
 use raw_window_handle as rwh;
-use std::{
-    marker::PhantomData,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::marker::PhantomData;
 
 #[cfg(target_os = "windows")]
 mod windows_impl;
@@ -16,9 +13,6 @@ pub fn init(class_name: &str) -> Result<Waywin, String> {
     Waywin::init(class_name)
 }
 
-
-static WAYWIN_INIT: AtomicBool = AtomicBool::new(false);
-
 /// Used to create windows and run the event runner.
 pub struct Waywin {
     backend_impl: backend_impl::Waywin,
@@ -26,10 +20,6 @@ pub struct Waywin {
 }
 impl Waywin {
     pub fn init(class_name: &str) -> Result<Self, String> {
-        if WAYWIN_INIT.swap(true, Ordering::Relaxed) {
-            return Err("Waywin::init can only be called once".to_string());
-        }
-
         backend_impl::Waywin::init(class_name).map(|backend_impl| Self {
             backend_impl,
             _marker: PhantomData,
@@ -57,20 +47,11 @@ impl Window {
     pub fn get_pos(&self) -> (i32, i32) {
         self.backend_impl.get_pos()
     }
-    pub fn get_mouse_pos(&self) -> (i32, i32) {
-        self.backend_impl.get_mouse_pos()
-    }
     pub fn get_scale_factor(&self) -> f64 {
         self.backend_impl.get_scale_factor()
     }
 }
 impl Window {
-    pub fn show(&self) {
-        self.backend_impl.show();
-    }
-    pub fn hide(&self) {
-        self.backend_impl.hide();
-    }
     pub fn request_redraw(&self) {
         self.backend_impl.request_redraw()
     }

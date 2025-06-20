@@ -1,51 +1,18 @@
+use crate::event::WindowEvent;
+use class::WindowClass;
+use std::cell::Cell;
+pub use window::Window;
+use windows::Win32::UI::{
+    HiDpi::{SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2},
+    WindowsAndMessaging::{DispatchMessageW, GetMessageW, PostQuitMessage, MSG},
+};
+
+mod class;
+mod pwstring;
 mod utils;
 mod window;
 
-use crate::event::WindowEvent;
-use std::{cell::Cell, ptr::null_mut};
-use utils::*;
-use windows_sys::Win32::{Graphics::Gdi::HBRUSH, UI::WindowsAndMessaging::*};
-
-pub use window::Window;
-
 pub type EventHook = Option<Box<dyn FnMut(WindowEvent)>>;
-
-struct WindowClass {
-    name: Vec<u16>,
-    _background: HBRUSH,
-}
-impl WindowClass {
-    fn new(name: &str) -> Result<Self, String> {
-        let name = to_wide_str(name);
-        let background = create_brush(0, 0, 0);
-        register_class(name.as_ptr(), Some(window::wndproc), background)
-            .map_err(|err| err.message())?;
-        Ok(Self {
-            name,
-            _background: background,
-        })
-    }
-    // fn as_string(&self) -> String {
-    //     from_wide_str(&self.name)
-    // }
-    fn as_ptr(&self) -> *const u16 {
-        self.name.as_ptr()
-    }
-}
-// impl Drop for WindowClass {
-//     fn drop(&mut self) {
-//         if let Err(err) = unregister_class(self.name.as_ptr()) {
-//             log::error!(
-//                 "Failed to unregister class '{}': {}",
-//                 from_wide_str(&self.name),
-//                 err
-//             );
-//         }
-//         if let Err(_) = delete_object(self.background) {
-//             log::error!("Failed to deleted background brush");
-//         }
-//     }
-// }
 
 pub struct Waywin {
     /// All created windows keep a pointer to this so **do not move it**
@@ -54,7 +21,13 @@ pub struct Waywin {
 }
 impl Waywin {
     pub fn init(class_name: &str) -> std::result::Result<Self, String> {
-        set_dpi_aware().map_err(|err| err.message())?;
+        if let Err(err) =
+            unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) }
+        {
+            log::error!("failed to set dpi awarness: {err}");
+        }
+        //
+
         let window_class = WindowClass::new(class_name)?;
 
         Ok(Self {
@@ -63,7 +36,7 @@ impl Waywin {
         })
     }
     pub fn exit(&self) {
-        post_quit_message(0);
+        unsafe { PostQuitMessage(0) }
     }
     pub fn run(&self, event_hook: impl FnMut(WindowEvent)) {
         let hook: Box<dyn FnMut(WindowEvent)> = unsafe {
@@ -75,13 +48,14 @@ impl Waywin {
         unsafe {
             let mut message: MSG = std::mem::zeroed();
 
-            while GetMessageW(&mut message as *mut _, null_mut(), 0, 0) > 0 {
+            while GetMessageW(&mut message as *mut _, None, 0, 0).as_bool() {
                 DispatchMessageW(&message as *const _);
             }
         }
         self.event_hook.set(None);
     }
 }
+
 impl std::fmt::Debug for Waywin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Waywin")

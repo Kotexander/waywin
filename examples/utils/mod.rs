@@ -107,6 +107,5 @@ impl<'a> ColorClearer<'a> {
         let dt = self.timer.elapsed();
         self.timer = std::time::Instant::now();
         self.t += dt.as_secs_f64();
-        // self.t = std::f64::consts::FRAC_PI_2;
     }
 }

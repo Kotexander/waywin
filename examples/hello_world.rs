@@ -13,16 +13,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut color_clearer = ColorClearer::new(&window).block_on().unwrap();
 
-    color_clearer.clear();
-    window.show();
-
     waywin.run(|event| {
-        log::info!("{event:?}");
+        match event.kind {
+            Event::Paint => {}
+            _ => {
+                log::info!("{event:?}");
+            }
+        }
+        // log::info!("{event:?}");
 
         match event.kind {
             Event::Close => {
                 waywin.exit();
-                window.hide();
             }
             Event::Resize(w, h) => {
                 color_clearer.resize(w, h);
