@@ -1,3 +1,6 @@
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("waywin only supports 64-bit targets.");
+
 pub mod event;
 
 use event::WindowEvent;
@@ -8,10 +11,6 @@ use std::marker::PhantomData;
 mod windows_impl;
 #[cfg(target_os = "windows")]
 use windows_impl as backend_impl;
-
-pub fn init(class_name: &str) -> Result<Waywin, String> {
-    Waywin::init(class_name)
-}
 
 /// Used to create windows and run the event runner.
 pub struct Waywin {
@@ -32,7 +31,7 @@ impl Waywin {
     pub fn exit(&self) {
         self.backend_impl.exit()
     }
-    pub fn run(&self, event_hook: impl FnMut(WindowEvent)) {
+    pub fn run(&self, event_hook: impl FnMut(WindowEvent) + 'static) {
         self.backend_impl.run(event_hook)
     }
 }

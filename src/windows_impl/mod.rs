@@ -1,58 +1,69 @@
 use crate::event::WindowEvent;
 use class::WindowClass;
-use std::cell::Cell;
+use std::{cell::UnsafeCell, rc::Rc};
 pub use window::Window;
-use windows::Win32::UI::{
-    HiDpi::{SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2},
-    WindowsAndMessaging::{DispatchMessageW, GetMessageW, PostQuitMessage, MSG},
+use windows::Win32::UI::WindowsAndMessaging::{
+    DispatchMessageW, GetMessageW, PostQuitMessage, TranslateMessage, MSG,
 };
 
 mod class;
-mod pwstring;
 mod utils;
 mod window;
 
-pub type EventHook = Option<Box<dyn FnMut(WindowEvent)>>;
+type EventHook = Rc<UnsafeCell<Option<Box<dyn FnMut(WindowEvent)>>>>;
 
 pub struct Waywin {
     /// All created windows keep a pointer to this so **do not move it**
-    event_hook: Box<Cell<EventHook>>,
-    window_class: WindowClass,
+    event_hook: EventHook,
+    window_class: Rc<WindowClass>,
 }
 impl Waywin {
     pub fn init(class_name: &str) -> std::result::Result<Self, String> {
-        if let Err(err) =
-            unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) }
-        {
-            log::error!("failed to set dpi awarness: {err}");
-        }
-        //
+        let window_class = Rc::new(WindowClass::new(class_name)?);
 
-        let window_class = WindowClass::new(class_name)?;
+        let event_hook = Rc::new(UnsafeCell::new(None));
 
         Ok(Self {
-            event_hook: Box::new(None.into()),
+            event_hook,
             window_class,
         })
     }
     pub fn exit(&self) {
         unsafe { PostQuitMessage(0) }
     }
-    pub fn run(&self, event_hook: impl FnMut(WindowEvent)) {
-        let hook: Box<dyn FnMut(WindowEvent)> = unsafe {
-            std::mem::transmute::<Box<dyn FnMut(WindowEvent)>, Box<dyn FnMut(WindowEvent)>>(
-                Box::new(event_hook),
-            )
-        };
-        self.event_hook.set(Some(hook));
-        unsafe {
-            let mut message: MSG = std::mem::zeroed();
+    pub fn run(&self, event_hook: impl FnMut(WindowEvent) + 'static) {
+        // TODO: this is still unsafe and a really bad way of doing things
 
-            while GetMessageW(&mut message as *mut _, None, 0, 0).as_bool() {
-                DispatchMessageW(&message as *const _);
+        unsafe { assert!((*self.event_hook.get()).is_none()) }
+
+        unsafe {
+            *self.event_hook.get() = Some(Box::new(event_hook));
+        }
+
+        // // erasing the the lifetime of the event hook.
+        // // Safety: i think its ok since the event hook gets unset
+        // // at the end of the function perserving liftimes...
+        // // and as long as waywin doesn't do anything else funny.
+        // // unsafe {
+        // //     *self.event_hook.get() = Some(Box::new(std::mem::transmute::<
+        // //         Box<dyn FnMut(WindowEvent)>,
+        // //         Box<dyn FnMut(WindowEvent)>,
+        // //     >(Box::new(event_hook))));
+        // // }
+
+        let mut message = MSG::default();
+
+        unsafe {
+            while GetMessageW(std::ptr::addr_of_mut!(message), None, 0, 0).as_bool() {
+                let _ = TranslateMessage(std::ptr::addr_of_mut!(message));
+                DispatchMessageW(std::ptr::addr_of!(message));
             }
         }
-        self.event_hook.set(None);
+
+        // this is important to keep lifetimes
+        unsafe {
+            *self.event_hook.get() = None;
+        }
     }
 }
 
