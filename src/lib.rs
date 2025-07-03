@@ -12,6 +12,11 @@ mod windows_impl;
 #[cfg(target_os = "windows")]
 use windows_impl as backend_impl;
 
+#[cfg(target_os = "linux")]
+mod wayland_impl;
+#[cfg(target_os = "linux")]
+use wayland_impl as backend_impl;
+
 /// Used to create windows and run the event runner.
 pub struct Waywin {
     backend_impl: backend_impl::Waywin,
@@ -31,7 +36,7 @@ impl Waywin {
     pub fn exit(&self) {
         self.backend_impl.exit()
     }
-    pub fn run(&self, event_hook: impl FnMut(WindowEvent) + 'static) {
+    pub fn run(&mut self, event_hook: impl FnMut(WindowEvent) + 'static) {
         self.backend_impl.run(event_hook)
     }
 }

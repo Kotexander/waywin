@@ -69,9 +69,6 @@ impl Waywin {
 
 impl std::fmt::Debug for Waywin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Waywin")
-            // .field("event_hook", &self.event_hook)
-            // .field("class_name", &self.class_name)
-            .finish_non_exhaustive()
+        f.debug_struct("Waywin").finish_non_exhaustive()
     }
 }

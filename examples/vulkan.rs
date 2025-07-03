@@ -65,13 +65,16 @@ use waywin::{
 fn main() -> Result<(), Box<dyn Error>> {
     colog::init();
 
-    let waywin = Waywin::init("vulkano")?;
-    let waywin2 = Waywin::init("vulkano2")?;
+    let mut waywin = Waywin::init("vulkano")?;
     let window = Arc::new(waywin.create_window("Vulkan Example")?);
     let mut app = App::new(window);
+    app.window_event(&WindowEvent {
+        kind: Event::Paint,
+        window_id: 0,
+    });
 
-    waywin.run(move |event| {
-        app.window_event(&waywin2, &event);
+    waywin.run(move |e| {
+        app.window_event(&e);
     });
 
     Ok(())
@@ -95,6 +98,8 @@ struct RenderContext {
     viewport: Viewport,
     recreate_swapchain: bool,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
+
+    time: std::time::Instant,
 }
 impl RenderContext {
     pub fn new(window: Arc<Window>, instance: &Arc<Instance>, device: &Arc<Device>) -> Self {
@@ -253,6 +258,7 @@ impl RenderContext {
             viewport,
             recreate_swapchain,
             previous_frame_end,
+            time: std::time::Instant::now(),
         }
     }
 }
@@ -363,10 +369,10 @@ impl App {
 }
 
 impl App {
-    fn window_event(&mut self, waywin: &Waywin, event: &WindowEvent) {
+    fn window_event(&mut self, event: &WindowEvent) {
         match event.kind {
             Event::Close => {
-                waywin.exit();
+                // waywin.exit();
             }
             Event::Resize(_, _) => {
                 self.rcx.recreate_swapchain = true;
@@ -487,6 +493,11 @@ impl App {
                         panic!("failed to flush future: {e}");
                     }
                 }
+
+                let now = std::time::Instant::now();
+                let dt = now.duration_since(self.rcx.time);
+                log::debug!("FPS: {:.0}", 1.0 / dt.as_secs_f64());
+                self.rcx.time = now;
             }
             _ => {}
         }
