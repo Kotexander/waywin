@@ -68,12 +68,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut waywin = Waywin::init("vulkano")?;
     let window = Arc::new(waywin.create_window("Vulkan Example")?);
     let mut app = App::new(window);
-    app.window_event(&WindowEvent {
-        kind: Event::Paint,
-        window_id: 0,
-    });
+
+    // app.window_event(&WindowEvent {
+    //     kind: Event::Paint,
+    //     window_id: 0,
+    // });
 
     waywin.run(move |e| {
+        if !matches!(e.kind, Event::Paint) {
+            log::debug!("{e:?}");
+        }
         app.window_event(&e);
     });
 
@@ -378,7 +382,7 @@ impl App {
                 self.rcx.recreate_swapchain = true;
             }
             Event::Paint => {
-                self.rcx.window.request_redraw();
+                // self.rcx.window.request_redraw();
                 let window_size = self.rcx.window.get_size();
 
                 if window_size.0 == 0 || window_size.1 == 0 {
@@ -496,7 +500,7 @@ impl App {
 
                 let now = std::time::Instant::now();
                 let dt = now.duration_since(self.rcx.time);
-                log::debug!("FPS: {:.0}", 1.0 / dt.as_secs_f64());
+                log::info!("FPS: {:.0}", 1.0 / dt.as_secs_f64());
                 self.rcx.time = now;
             }
             _ => {}

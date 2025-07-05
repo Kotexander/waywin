@@ -1,62 +1,50 @@
-use std::sync::Arc;
+use crate::event::WindowEvent;
 use wayland_client::{
     delegate_noop,
+    globals::{registry_queue_init, GlobalListContents},
     protocol::{
         wl_compositor::WlCompositor,
         wl_registry::{self, WlRegistry},
     },
     Connection, Dispatch, EventQueue, QueueHandle,
 };
-use wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
+use wayland_protocols::xdg::{
+    decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+    shell::client::xdg_wm_base::{self, XdgWmBase},
+};
 pub use window::Window;
-
-use crate::event::WindowEvent;
 
 mod window;
 
 #[derive(Default)]
-struct State {
+struct WaywinState {
     compositor: Option<WlCompositor>,
     xdg_wm_base: Option<XdgWmBase>,
+    decoration: Option<ZxdgDecorationManagerV1>,
     event_hook: Option<Box<dyn FnMut(WindowEvent)>>,
     running: bool,
 }
-impl State {
+impl WaywinState {
     pub fn hook(&mut self, event: WindowEvent) {
         if let Some(hook) = &mut self.event_hook {
             hook(event);
         }
     }
 }
-impl Dispatch<WlRegistry, ()> for State {
+impl Dispatch<WlRegistry, GlobalListContents> for WaywinState {
     fn event(
-        state: &mut Self,
-        proxy: &WlRegistry,
-        event: wl_registry::Event,
-        _data: &(),
+        _state: &mut Self,
+        _proxy: &WlRegistry,
+        _event: wl_registry::Event,
+        _data: &GlobalListContents,
         _conn: &Connection,
-        qhandle: &wayland_client::QueueHandle<Self>,
+        _qhandle: &wayland_client::QueueHandle<Self>,
     ) {
-        log::info!("WlRegistry {event:?}");
-
-        if let wl_registry::Event::Global {
-            name, interface, ..
-        } = event
-        {
-            match &interface[..] {
-                "wl_compositor" => {
-                    state.compositor = Some(proxy.bind(name, 1, qhandle, ()));
-                }
-                "xdg_wm_base" => {
-                    state.xdg_wm_base = Some(proxy.bind(name, 1, qhandle, ()));
-                }
-                _ => {}
-            }
-        }
+        /* react to dynamic global events here */
     }
 }
 
-impl Dispatch<XdgWmBase, ()> for State {
+impl Dispatch<XdgWmBase, ()> for WaywinState {
     fn event(
         _state: &mut Self,
         proxy: &XdgWmBase,
@@ -65,45 +53,45 @@ impl Dispatch<XdgWmBase, ()> for State {
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
-        log::info!("XdgWmBase {event:?}");
+        log::debug!("XdgWmBase {event:?}");
 
         match event {
             xdg_wm_base::Event::Ping { serial } => {
                 proxy.pong(serial);
             }
-            _ => unreachable!(),
+            _ => unimplemented!(),
         }
     }
 }
 
-delegate_noop!(State: WlCompositor);
+delegate_noop!(WaywinState: WlCompositor);
+delegate_noop!(WaywinState: ZxdgDecorationManagerV1);
 
 pub struct Waywin {
-    event_queue: EventQueue<State>,
-    qhandle: QueueHandle<State>,
-    connection: Arc<Connection>,
-    state: State,
+    event_queue: EventQueue<WaywinState>,
+    qhandle: QueueHandle<WaywinState>,
+    connection: Connection,
+    state: WaywinState,
 }
 impl Waywin {
     pub fn init(instance: &str) -> Result<Self, String> {
         let connection = Connection::connect_to_env()
             .map_err(|err| format!("failed to connect to wayland: {err}"))?;
 
-        let mut simple = State::default();
+        let mut simple = WaywinState::default();
 
-        // discover interfaces
-        let mut event_queue = connection.new_event_queue::<State>();
+        let (globals, event_queue) = registry_queue_init(&connection).unwrap();
+
         let qhandle = event_queue.handle();
-        let display = connection.display();
-        display.get_registry(&qhandle, ());
-
-        event_queue.roundtrip(&mut simple).unwrap();
+        simple.compositor = Some(globals.bind(&qhandle, 1..=6, ()).unwrap());
+        simple.xdg_wm_base = Some(globals.bind(&qhandle, 1..=7, ()).unwrap());
+        simple.decoration = Some(globals.bind(&qhandle, 1..=1, ()).unwrap());
 
         log::info!("Init {instance} done");
 
         Ok(Self {
             event_queue,
-            connection: Arc::new(connection),
+            connection,
             state: simple,
             qhandle,
         })

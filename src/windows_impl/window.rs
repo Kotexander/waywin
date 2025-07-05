@@ -16,11 +16,11 @@ use windows::Win32::{
         HiDpi::GetDpiForWindow,
         WindowsAndMessaging::{
             CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW,
-            GetWindowRect, PostMessageW, SetWindowLongPtrW, SetWindowPos, CREATESTRUCTW,
-            CW_USEDEFAULT, GWLP_HINSTANCE, GWLP_USERDATA, SWP_NOACTIVATE, SWP_NOZORDER,
-            USER_DEFAULT_SCREEN_DPI, WINDOW_EX_STYLE, WM_CLOSE, WM_CREATE, WM_DPICHANGED,
-            WM_ERASEBKGND, WM_MOUSEMOVE, WM_NCCREATE, WM_PAINT, WM_SIZE, WM_USER, WS_CLIPCHILDREN,
-            WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+            PostMessageW, SetWindowLongPtrW, SetWindowPos, CREATESTRUCTW, CW_USEDEFAULT,
+            GWLP_HINSTANCE, GWLP_USERDATA, SWP_NOACTIVATE, SWP_NOZORDER, USER_DEFAULT_SCREEN_DPI,
+            WINDOW_EX_STYLE, WM_CLOSE, WM_CREATE, WM_DPICHANGED, WM_ERASEBKGND, WM_MOUSEMOVE,
+            WM_NCCREATE, WM_PAINT, WM_SIZE, WM_USER, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
+            WS_OVERLAPPEDWINDOW, WS_VISIBLE,
         },
     },
 };
@@ -96,20 +96,21 @@ impl Window {
         unsafe { GetClientRect(self.hwnd(), std::ptr::addr_of_mut!(rect)).unwrap() }
         rect
     }
-    fn get_window_rect(&self) -> RECT {
-        let mut rect: RECT = RECT::default();
-        unsafe { GetWindowRect(self.hwnd(), std::ptr::addr_of_mut!(rect)).unwrap() }
-        rect
-    }
 
     pub fn get_size(&self) -> (u32, u32) {
         let (w, h) = get_size(self.get_client_rect());
         (w as u32, h as u32)
     }
-    pub fn get_pos(&self) -> (i32, i32) {
-        let rect = self.get_window_rect();
-        (rect.left, rect.top)
-    }
+
+    // fn get_window_rect(&self) -> RECT {
+    //     let mut rect: RECT = RECT::default();
+    //     unsafe { GetWindowRect(self.hwnd(), std::ptr::addr_of_mut!(rect)).unwrap() }
+    //     rect
+    // }
+    // pub fn get_pos(&self) -> (i32, i32) {
+    //     let rect = self.get_window_rect();
+    //     (rect.left, rect.top)
+    // }
 
     pub fn get_scale_factor(&self) -> f64 {
         let dpi = unsafe { GetDpiForWindow(self.hwnd()) };

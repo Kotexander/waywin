@@ -1,5 +1,7 @@
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("waywin only supports 64-bit targets.");
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+compile_error!("waywin only supports Linux and Windows");
 
 pub mod event;
 
@@ -47,9 +49,6 @@ pub struct Window {
 impl Window {
     pub fn get_size(&self) -> (u32, u32) {
         self.backend_impl.get_size()
-    }
-    pub fn get_pos(&self) -> (i32, i32) {
-        self.backend_impl.get_pos()
     }
     pub fn get_scale_factor(&self) -> f64 {
         self.backend_impl.get_scale_factor()
