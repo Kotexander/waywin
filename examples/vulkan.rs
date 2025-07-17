@@ -75,9 +75,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // });
 
     waywin.run(move |e| {
-        if !matches!(e.kind, Event::Paint) {
-            log::debug!("{e:?}");
-        }
+        // if !matches!(e.kind, Event::Paint) {
+        log::warn!("{e:?}");
+        // }
         app.window_event(&e);
     });
 
@@ -125,14 +125,11 @@ impl RenderContext {
                 device.clone(),
                 surface,
                 SwapchainCreateInfo {
-                    min_image_count: surface_capabilities.min_image_count.max(2),
-
+                    min_image_count: surface_capabilities.min_image_count + 1,
                     image_format,
-
                     image_extent: window_size.into(),
-
                     image_usage: ImageUsage::COLOR_ATTACHMENT,
-
+                    present_mode: vulkano::swapchain::PresentMode::Immediate,
                     composite_alpha: surface_capabilities
                         .supported_composite_alpha
                         .into_iter()

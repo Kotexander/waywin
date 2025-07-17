@@ -6,7 +6,3 @@ because i wanted to make windowing library
 
 ## ⚠️ still work in progress ⚠️
 both windows and wayland are work in progress
-
-## todos
-### wayland
-- fractional scaling

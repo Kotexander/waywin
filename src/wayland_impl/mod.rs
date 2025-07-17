@@ -8,9 +8,15 @@ use wayland_client::{
     },
     Connection, Dispatch, EventQueue, QueueHandle,
 };
-use wayland_protocols::xdg::{
-    decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
-    shell::client::xdg_wm_base::{self, XdgWmBase},
+use wayland_protocols::{
+    wp::{
+        fractional_scale::v1::client::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
+        viewporter::client::wp_viewporter::WpViewporter,
+    },
+    xdg::{
+        decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+        shell::client::xdg_wm_base::{self, XdgWmBase},
+    },
 };
 pub use window::Window;
 
@@ -21,6 +27,8 @@ struct WaywinState {
     compositor: Option<WlCompositor>,
     xdg_wm_base: Option<XdgWmBase>,
     decoration: Option<ZxdgDecorationManagerV1>,
+    viewporter: Option<WpViewporter>,
+    scaling: Option<WpFractionalScaleManagerV1>,
     event_hook: Option<Box<dyn FnMut(WindowEvent)>>,
     running: bool,
 }
@@ -31,6 +39,7 @@ impl WaywinState {
         }
     }
 }
+
 impl Dispatch<WlRegistry, GlobalListContents> for WaywinState {
     fn event(
         _state: &mut Self,
@@ -43,7 +52,6 @@ impl Dispatch<WlRegistry, GlobalListContents> for WaywinState {
         /* react to dynamic global events here */
     }
 }
-
 impl Dispatch<XdgWmBase, ()> for WaywinState {
     fn event(
         _state: &mut Self,
@@ -53,7 +61,7 @@ impl Dispatch<XdgWmBase, ()> for WaywinState {
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
-        log::debug!("XdgWmBase {event:?}");
+        // log::debug!("XdgWmBase {event:?}");
 
         match event {
             xdg_wm_base::Event::Ping { serial } => {
@@ -66,34 +74,46 @@ impl Dispatch<XdgWmBase, ()> for WaywinState {
 
 delegate_noop!(WaywinState: WlCompositor);
 delegate_noop!(WaywinState: ZxdgDecorationManagerV1);
+delegate_noop!(WaywinState: WpViewporter);
+delegate_noop!(WaywinState: WpFractionalScaleManagerV1);
 
 pub struct Waywin {
     event_queue: EventQueue<WaywinState>,
     qhandle: QueueHandle<WaywinState>,
     connection: Connection,
     state: WaywinState,
+    app_id: String,
 }
 impl Waywin {
     pub fn init(instance: &str) -> Result<Self, String> {
         let connection = Connection::connect_to_env()
             .map_err(|err| format!("failed to connect to wayland: {err}"))?;
 
-        let mut simple = WaywinState::default();
+        let mut state = WaywinState::default();
 
         let (globals, event_queue) = registry_queue_init(&connection).unwrap();
 
         let qhandle = event_queue.handle();
-        simple.compositor = Some(globals.bind(&qhandle, 1..=6, ()).unwrap());
-        simple.xdg_wm_base = Some(globals.bind(&qhandle, 1..=7, ()).unwrap());
-        simple.decoration = Some(globals.bind(&qhandle, 1..=1, ()).unwrap());
-
-        log::info!("Init {instance} done");
+        state.compositor = Some(
+            globals
+                .bind(&qhandle, 1..=6, ())
+                .map_err(|err| format!("failed to bind WlCompositor: {err}"))?,
+        );
+        state.xdg_wm_base = Some(
+            globals
+                .bind(&qhandle, 1..=7, ())
+                .map_err(|err| format!("failed to bind XdgWmBase: {err}"))?,
+        );
+        state.decoration = globals.bind(&qhandle, 1..=1, ()).ok();
+        state.viewporter = globals.bind(&qhandle, 1..=1, ()).ok();
+        state.scaling = globals.bind(&qhandle, 1..=1, ()).ok();
 
         Ok(Self {
             event_queue,
             connection,
-            state: simple,
+            state,
             qhandle,
+            app_id: instance.to_owned(),
         })
     }
     pub fn exit(&self) {}

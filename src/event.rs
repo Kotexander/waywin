@@ -15,7 +15,7 @@ pub enum Event {
     Close,
     Resize(u32, u32),
     NewScaleFactor(f64),
-    MouseMoved(i32, i32),
+    // MouseMoved(i32, i32),
     Focus(bool),
 }
 #[derive(Debug, Clone, Copy, PartialEq)]

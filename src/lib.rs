@@ -53,12 +53,14 @@ impl Window {
     pub fn get_scale_factor(&self) -> f64 {
         self.backend_impl.get_scale_factor()
     }
-}
-impl Window {
     pub fn request_redraw(&self) {
         self.backend_impl.request_redraw()
     }
+    pub fn set_title(&self, title: &str) {
+        self.backend_impl.set_title(title);
+    }
 }
+
 impl rwh::HasWindowHandle for Window {
     fn window_handle(&self) -> std::result::Result<rwh::WindowHandle<'_>, rwh::HandleError> {
         self.backend_impl.window_handle()
