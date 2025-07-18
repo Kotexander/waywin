@@ -71,7 +71,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     waywin.run(move |e, running| {
         if !matches!(e.kind, Event::Paint) {
-            log::warn!("{e:?}");
+            log::debug!("{e:?}");
         }
         app.window_event(&e, running);
     });
@@ -493,7 +493,7 @@ impl App {
 
                 let now = std::time::Instant::now();
                 let dt = now.duration_since(self.rcx.time);
-                log::info!("FPS: {:.0}", 1.0 / dt.as_secs_f64());
+                log::trace!("FPS: {:.0}", 1.0 / dt.as_secs_f64());
                 self.rcx.time = now;
             }
             _ => {}
