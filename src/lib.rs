@@ -1,5 +1,5 @@
 #[cfg(not(target_pointer_width = "64"))]
-compile_error!("waywin only supports 64-bit targets.");
+compile_error!("waywin only supports 64-bit targets");
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 compile_error!("waywin only supports Linux and Windows");
 
@@ -31,14 +31,11 @@ impl Waywin {
             _marker: PhantomData,
         })
     }
-    pub fn create_window(&self, title: &str) -> Result<Window, String> {
-        backend_impl::Window::new(&self.backend_impl, title)
+    pub fn create_window(&mut self, title: &str) -> Result<Window, String> {
+        backend_impl::Window::new(&mut self.backend_impl, title)
             .map(|backend_impl| Window { backend_impl })
     }
-    pub fn exit(&self) {
-        self.backend_impl.exit()
-    }
-    pub fn run(&mut self, event_hook: impl FnMut(WindowEvent) + 'static) {
+    pub fn run(&mut self, event_hook: impl FnMut(WindowEvent, &mut bool) + 'static) {
         self.backend_impl.run(event_hook)
     }
 }
@@ -57,7 +54,10 @@ impl Window {
         self.backend_impl.request_redraw()
     }
     pub fn set_title(&self, title: &str) {
-        self.backend_impl.set_title(title);
+        self.backend_impl.set_title(title)
+    }
+    pub fn id(&self) -> usize {
+        self.backend_impl.id()
     }
 }
 

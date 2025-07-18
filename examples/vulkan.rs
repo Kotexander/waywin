@@ -69,16 +69,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let window = Arc::new(waywin.create_window("Vulkan Example")?);
     let mut app = App::new(window);
 
-    // app.window_event(&WindowEvent {
-    //     kind: Event::Paint,
-    //     window_id: 0,
-    // });
-
-    waywin.run(move |e| {
-        // if !matches!(e.kind, Event::Paint) {
-        log::warn!("{e:?}");
-        // }
-        app.window_event(&e);
+    waywin.run(move |e, running| {
+        if !matches!(e.kind, Event::Paint) {
+            log::warn!("{e:?}");
+        }
+        app.window_event(&e, running);
     });
 
     Ok(())
@@ -125,11 +120,11 @@ impl RenderContext {
                 device.clone(),
                 surface,
                 SwapchainCreateInfo {
-                    min_image_count: surface_capabilities.min_image_count + 1,
+                    min_image_count: surface_capabilities.min_image_count,
                     image_format,
                     image_extent: window_size.into(),
                     image_usage: ImageUsage::COLOR_ATTACHMENT,
-                    present_mode: vulkano::swapchain::PresentMode::Immediate,
+                    present_mode: vulkano::swapchain::PresentMode::Fifo,
                     composite_alpha: surface_capabilities
                         .supported_composite_alpha
                         .into_iter()
@@ -370,16 +365,16 @@ impl App {
 }
 
 impl App {
-    fn window_event(&mut self, event: &WindowEvent) {
+    fn window_event(&mut self, event: &WindowEvent, running: &mut bool) {
         match event.kind {
             Event::Close => {
-                // waywin.exit();
+                *running = false;
             }
             Event::Resize(_, _) => {
                 self.rcx.recreate_swapchain = true;
             }
             Event::Paint => {
-                // self.rcx.window.request_redraw();
+                self.rcx.window.request_redraw();
                 let window_size = self.rcx.window.get_size();
 
                 if window_size.0 == 0 || window_size.1 == 0 {
@@ -483,7 +478,8 @@ impl App {
                     .then_signal_fence_and_flush();
 
                 match future.map_err(Validated::unwrap) {
-                    Ok(future) => {
+                    Ok(mut future) => {
+                        future.cleanup_finished();
                         self.rcx.previous_frame_end = Some(future.boxed());
                     }
                     Err(VulkanError::OutOfDate) => {

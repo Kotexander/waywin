@@ -51,7 +51,7 @@ struct PendingConfigure {
     size: Option<(i32, i32)>,
 }
 
-struct WindowInner {
+pub struct WindowInner {
     surface: WlSurface,
     _xdg_surface: XdgSurface,
     toplevel: XdgToplevel,
@@ -59,8 +59,9 @@ struct WindowInner {
     _decoration: Option<ZxdgToplevelDecorationV1>,
     viewport_scaling: Option<(WpViewport, WpFractionalScaleV1)>,
 
-    qhandle: QueueHandle<WaywinState>,
-    frame: AtomicBool,
+    // qhandle: QueueHandle<WaywinState>,
+    // frame: AtomicBool,
+    redraw: AtomicBool,
 
     // state and configure shouln't be modified on other threads
     state: Mutex<State>,
@@ -70,17 +71,26 @@ struct WindowInner {
     connection: Connection,
 }
 impl WindowInner {
-    fn id(&self) -> usize {
+    pub fn id(&self) -> usize {
         self.surface.id().as_ptr() as usize
     }
-    fn frame(self: &Arc<Self>) {
-        if self
-            .frame
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+    // pub fn frame(self: &Arc<Self>) {
+    //     if self
+    //         .frame
+    //         .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+    //         .is_ok()
+    //     {
+    //         self.surface.frame(&self.qhandle, Arc::downgrade(self));
+    //     }
+    // }
+    pub fn set_redraw(&self) {
+        self.redraw.store(true, Ordering::Relaxed);
+        // self.inner.frame();
+    }
+    pub fn reset_redraw(&self) -> bool {
+        self.redraw
+            .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
             .is_ok()
-        {
-            self.surface.frame(&self.qhandle, Arc::downgrade(self));
-        }
     }
 }
 
@@ -88,45 +98,38 @@ pub struct Window {
     inner: Arc<WindowInner>,
 }
 impl Window {
-    pub fn new(waywin: &Waywin, title: &str) -> Result<Self, String> {
+    pub fn new(waywin: &mut Waywin, title: &str) -> Result<Self, String> {
         // this freeze might not be needed since a window shouldn't be created while the event queue is polled
         let freeze = waywin.qhandle.freeze();
         let inner = Arc::new_cyclic(|weak| {
             let surface = {
                 waywin
-                    .state
                     .compositor
-                    .as_ref()
-                    .unwrap()
                     .create_surface(&waywin.qhandle, weak.clone())
             };
-            let xdg_surface = waywin.state.xdg_wm_base.as_ref().unwrap().get_xdg_surface(
-                &surface,
-                &waywin.qhandle,
-                weak.clone(),
-            );
+            let xdg_surface =
+                waywin
+                    .xdg_wm_base
+                    .get_xdg_surface(&surface, &waywin.qhandle, weak.clone());
             let toplevel = xdg_surface.get_toplevel(&waywin.qhandle, weak.clone());
             toplevel.set_title(title.to_owned());
             toplevel.set_app_id(waywin.app_id.clone());
 
-            let decoration = waywin.state.decoration.as_ref().map(|decoration| {
+            let decoration = waywin.decoration.as_ref().map(|decoration| {
                 let decor =
                     decoration.get_toplevel_decoration(&toplevel, &waywin.qhandle, weak.clone());
                 decor.set_mode(Mode::ServerSide);
                 decor
             });
 
-            let viewport_scaling = waywin
-                .state
-                .viewporter
-                .as_ref()
-                .zip(waywin.state.scaling.as_ref())
-                .map(|(viewporter, scaling)| {
+            let viewport_scaling = waywin.viewporter.as_ref().zip(waywin.scaling.as_ref()).map(
+                |(viewporter, scaling)| {
                     (
                         viewporter.get_viewport(&surface, &waywin.qhandle, weak.clone()),
                         scaling.get_fractional_scale(&surface, &waywin.qhandle, weak.clone()),
                     )
-                });
+                },
+            );
 
             surface.commit();
 
@@ -136,6 +139,8 @@ impl Window {
             };
             let configure = PendingConfigure::default();
 
+            waywin.windows.push(weak.clone());
+
             WindowInner {
                 surface,
                 _xdg_surface: xdg_surface,
@@ -144,8 +149,9 @@ impl Window {
                 connection: waywin.connection.clone(),
                 state: Mutex::new(state),
                 configure: Mutex::new(configure),
-                frame: AtomicBool::new(false),
-                qhandle: waywin.qhandle.clone(),
+                // qhandle: waywin.qhandle.clone(),
+                // frame: AtomicBool::new(false),
+                redraw: AtomicBool::new(false),
                 viewport_scaling,
             }
         });
@@ -166,7 +172,11 @@ impl Window {
         self.inner.toplevel.set_title(title.to_owned());
     }
     pub fn request_redraw(&self) {
-        self.inner.frame();
+        self.inner.set_redraw();
+        // self.inner.frame();
+    }
+    pub fn id(&self) -> usize {
+        self.inner.id()
     }
 }
 
@@ -211,12 +221,15 @@ impl Dispatch<WlSurface, Weak<WindowInner>> for WaywinState {
                 // fallback if viewporter or fractional scaling is not supported
                 let factor = factor as f64;
                 let mut state = data.state.lock().unwrap();
+                // let mut configure = data.configure.lock().unwrap();
                 if state.scale != factor {
                     state.scale = factor;
+                    // configure.scaled = true;
                     data.surface.set_buffer_scale(factor as i32);
                     let size = state.physical_size();
 
                     drop(state);
+                    // drop(configure);
 
                     waywin_state.hook(WindowEvent {
                         kind: Event::NewScaleFactor(factor),
@@ -226,10 +239,7 @@ impl Dispatch<WlSurface, Weak<WindowInner>> for WaywinState {
                         kind: Event::Resize(size.0, size.1),
                         window_id: data.id(),
                     });
-                    waywin_state.hook(WindowEvent {
-                        kind: Event::Paint,
-                        window_id: data.id(),
-                    });
+                    data.set_redraw();
                 }
             }
             wl_surface::Event::PreferredBufferTransform { transform: _ } => {}
@@ -239,24 +249,25 @@ impl Dispatch<WlSurface, Weak<WindowInner>> for WaywinState {
 }
 impl Dispatch<WlCallback, Weak<WindowInner>> for WaywinState {
     fn event(
-        state: &mut Self,
+        _state: &mut Self,
         _proxy: &WlCallback,
         event: <WlCallback as wayland_client::Proxy>::Event,
         weak: &Weak<WindowInner>,
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
-        let Some(data) = weak.upgrade() else {
+        let Some(_data) = weak.upgrade() else {
             return;
         };
         match event {
             wl_callback::Event::Done { callback_data: _ } => {
-                data.frame.store(false, Ordering::SeqCst);
+                todo!()
+                // data.frame.store(false, Ordering::SeqCst);
 
-                state.hook(WindowEvent {
-                    kind: Event::Paint,
-                    window_id: data.id(),
-                });
+                // state.hook(WindowEvent {
+                //     kind: Event::Paint,
+                //     window_id: data.id(),
+                // });
             }
             _ => unimplemented!(),
         }
@@ -271,8 +282,6 @@ impl Dispatch<XdgSurface, Weak<WindowInner>> for WaywinState {
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
-        log::debug!("XdgSurface {event:?}");
-
         match event {
             xdg_surface::Event::Configure { serial } => {
                 proxy.ack_configure(serial);
@@ -281,44 +290,43 @@ impl Dispatch<XdgSurface, Weak<WindowInner>> for WaywinState {
                     return;
                 };
 
-                let mut paint = false;
-                let mut resize = false;
-
                 let mut state = data.state.lock().unwrap();
                 let mut configure = data.configure.lock().unwrap();
+
+                let mut resize = false;
+
+                // if configure.scaled {
+                //     resize = true;
+                //     configure.scaled = false;
+                // }
 
                 if let Some(conf_size) = configure.size {
                     if conf_size != state.size {
                         resize = true;
-                        paint = true;
-
                         state.size = conf_size;
+                        if let Some((viewport, _)) = &data.viewport_scaling {
+                            viewport.set_destination(state.size.0, state.size.1);
+                        }
                     }
                 } else {
-                    paint = true;
                     configure.size = Some(state.size);
+                    if let Some((viewport, _)) = &data.viewport_scaling {
+                        viewport.set_destination(state.size.0, state.size.1);
+                    }
+                    data.set_redraw();
                 }
 
-                let size = state.physical_size();
-                let dst_size = state.size;
-
-                drop(state);
-                drop(configure);
-
                 if resize {
-                    if let Some((viewport, _)) = &data.viewport_scaling {
-                        viewport.set_destination(dst_size.0, dst_size.1);
-                    }
+                    let size = state.physical_size();
+
+                    drop(state);
+                    drop(configure);
+
                     waywin_state.hook(WindowEvent {
                         kind: Event::Resize(size.0, size.1),
                         window_id: data.id(),
                     });
-                }
-                if paint {
-                    waywin_state.hook(WindowEvent {
-                        kind: Event::Paint,
-                        window_id: data.id(),
-                    });
+                    data.set_redraw();
                 }
             }
             _ => unimplemented!(),
@@ -327,15 +335,13 @@ impl Dispatch<XdgSurface, Weak<WindowInner>> for WaywinState {
 }
 impl Dispatch<XdgToplevel, Weak<WindowInner>> for WaywinState {
     fn event(
-        _state: &mut Self,
+        state: &mut Self,
         _proxy: &XdgToplevel,
         event: <XdgToplevel as wayland_client::Proxy>::Event,
         data: &Weak<WindowInner>,
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
-        log::debug!("XdgToplevel {event:?}");
-
         let Some(data) = data.upgrade() else {
             return;
         };
@@ -350,7 +356,10 @@ impl Dispatch<XdgToplevel, Weak<WindowInner>> for WaywinState {
                 }
             }
             xdg_toplevel::Event::Close => {
-                todo!()
+                state.hook(WindowEvent {
+                    kind: Event::Close,
+                    window_id: data.id(),
+                });
             }
             xdg_toplevel::Event::ConfigureBounds {
                 width: _,
@@ -406,12 +415,15 @@ impl Dispatch<WpFractionalScaleV1, Weak<WindowInner>> for WaywinState {
                 let scale = scale as f64 / 120.0;
 
                 let mut state = data.state.lock().unwrap();
+                // let mut configure = data.configure.lock().unwrap();
 
                 if state.scale != scale {
                     state.scale = scale;
+                    // configure.scaled = true;
                     let size = state.physical_size();
 
                     drop(state);
+                    // drop(configure);
 
                     waywin_state.hook(WindowEvent {
                         kind: Event::NewScaleFactor(scale),
@@ -421,10 +433,7 @@ impl Dispatch<WpFractionalScaleV1, Weak<WindowInner>> for WaywinState {
                         kind: Event::Resize(size.0, size.1),
                         window_id: data.id(),
                     });
-                    waywin_state.hook(WindowEvent {
-                        kind: Event::Paint,
-                        window_id: data.id(),
-                    });
+                    data.set_redraw();
                 }
             }
             _ => unimplemented!(),

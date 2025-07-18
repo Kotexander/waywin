@@ -1,4 +1,6 @@
-use crate::event::WindowEvent;
+use std::sync::Weak;
+
+use crate::event::{Event, WindowEvent};
 use wayland_client::{
     delegate_noop,
     globals::{registry_queue_init, GlobalListContents},
@@ -19,23 +21,19 @@ use wayland_protocols::{
     },
 };
 pub use window::Window;
+use window::WindowInner;
 
 mod window;
 
 #[derive(Default)]
 struct WaywinState {
-    compositor: Option<WlCompositor>,
-    xdg_wm_base: Option<XdgWmBase>,
-    decoration: Option<ZxdgDecorationManagerV1>,
-    viewporter: Option<WpViewporter>,
-    scaling: Option<WpFractionalScaleManagerV1>,
-    event_hook: Option<Box<dyn FnMut(WindowEvent)>>,
+    event_hook: Option<Box<dyn FnMut(WindowEvent, &mut bool)>>,
     running: bool,
 }
 impl WaywinState {
     pub fn hook(&mut self, event: WindowEvent) {
         if let Some(hook) = &mut self.event_hook {
-            hook(event);
+            hook(event, &mut self.running);
         }
     }
 }
@@ -78,50 +76,81 @@ delegate_noop!(WaywinState: WpViewporter);
 delegate_noop!(WaywinState: WpFractionalScaleManagerV1);
 
 pub struct Waywin {
+    compositor: WlCompositor,
+    xdg_wm_base: XdgWmBase,
+    decoration: Option<ZxdgDecorationManagerV1>,
+    viewporter: Option<WpViewporter>,
+    scaling: Option<WpFractionalScaleManagerV1>,
+
     event_queue: EventQueue<WaywinState>,
     qhandle: QueueHandle<WaywinState>,
     connection: Connection,
     state: WaywinState,
     app_id: String,
+
+    windows: Vec<Weak<WindowInner>>,
 }
 impl Waywin {
     pub fn init(instance: &str) -> Result<Self, String> {
         let connection = Connection::connect_to_env()
             .map_err(|err| format!("failed to connect to wayland: {err}"))?;
 
-        let mut state = WaywinState::default();
+        let state = WaywinState::default();
 
         let (globals, event_queue) = registry_queue_init(&connection).unwrap();
 
         let qhandle = event_queue.handle();
-        state.compositor = Some(
-            globals
-                .bind(&qhandle, 1..=6, ())
-                .map_err(|err| format!("failed to bind WlCompositor: {err}"))?,
-        );
-        state.xdg_wm_base = Some(
-            globals
-                .bind(&qhandle, 1..=7, ())
-                .map_err(|err| format!("failed to bind XdgWmBase: {err}"))?,
-        );
-        state.decoration = globals.bind(&qhandle, 1..=1, ()).ok();
-        state.viewporter = globals.bind(&qhandle, 1..=1, ()).ok();
-        state.scaling = globals.bind(&qhandle, 1..=1, ()).ok();
+        let compositor = globals
+            .bind(&qhandle, 1..=6, ())
+            .map_err(|err| format!("failed to bind WlCompositor: {err}"))?;
+        let xdg_wm_base = globals
+            .bind(&qhandle, 1..=7, ())
+            .map_err(|err| format!("failed to bind XdgWmBase: {err}"))?;
+        let decoration = globals.bind(&qhandle, 1..=1, ()).ok();
+        let viewporter = globals.bind(&qhandle, 1..=1, ()).ok();
+        let scaling = globals.bind(&qhandle, 1..=1, ()).ok();
 
         Ok(Self {
+            compositor,
+            xdg_wm_base,
+            decoration,
+            viewporter,
+            scaling,
+
             event_queue,
             connection,
             state,
             qhandle,
             app_id: instance.to_owned(),
+            windows: vec![],
         })
     }
-    pub fn exit(&self) {}
-    pub fn run(&mut self, event_hook: impl FnMut(WindowEvent) + 'static) {
+    pub fn run(&mut self, event_hook: impl FnMut(WindowEvent, &mut bool) + 'static) {
         self.state.event_hook = Some(Box::new(event_hook));
         self.state.running = true;
+
         while self.state.running {
-            self.event_queue.blocking_dispatch(&mut self.state).unwrap();
+            self.event_queue.dispatch_pending(&mut self.state).unwrap();
+
+            self.connection.flush().unwrap();
+            let read = self.event_queue.prepare_read().unwrap();
+            read.read().unwrap();
+            self.event_queue.dispatch_pending(&mut self.state).unwrap();
+
+            self.windows.retain(|window| {
+                if let Some(window) = window.upgrade() {
+                    // log::info!("{} {}", window.id(), window.)
+                    if window.reset_redraw() {
+                        self.state.hook(WindowEvent {
+                            kind: Event::Paint,
+                            window_id: window.id(),
+                        });
+                    }
+                    true
+                } else {
+                    false
+                }
+            });
         }
         self.state.event_hook = None;
     }
