@@ -2,8 +2,8 @@
 pub enum Event {
     Paint,
     Close,
-    Resize(u32, u32),
-    NewScaleFactor(f64),
+    Resized,
+    NewScaleFactor,
     Focus(bool),
 }
 #[derive(Debug, Clone, Copy, PartialEq)]

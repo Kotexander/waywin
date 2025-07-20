@@ -63,17 +63,18 @@ use waywin::{
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
-    colog::init();
+    env_logger::init();
 
     let mut waywin = Waywin::init("vulkano")?;
     let window = Arc::new(waywin.create_window("Vulkan Example")?);
     let mut app = App::new(window);
 
-    waywin.run(move |e, running| {
+    waywin.run(move |e| {
         if !matches!(e.kind, Event::Paint) {
             log::debug!("{e:?}");
         }
-        app.window_event(&e, running);
+
+        app.window_event(&e);
     });
 
     Ok(())
@@ -103,7 +104,7 @@ struct RenderContext {
 impl RenderContext {
     pub fn new(window: Arc<Window>, instance: &Arc<Instance>, device: &Arc<Device>) -> Self {
         let surface = Surface::from_window(instance.clone(), window.clone()).unwrap();
-        let window_size = window.get_size();
+        let window_size = window.get_physical_size();
 
         let (swapchain, images) = {
             let surface_capabilities = device
@@ -365,27 +366,18 @@ impl App {
 }
 
 impl App {
-    fn window_event(&mut self, event: &WindowEvent, running: &mut bool) {
+    fn window_event(&mut self, event: &WindowEvent) {
         match event.kind {
-            Event::Close => {
-                *running = false;
-            }
-            Event::Resize(_, _) => {
+            Event::Close => {}
+            Event::Resized => {
                 self.rcx.recreate_swapchain = true;
             }
             Event::Paint => {
-                self.rcx.window.request_redraw();
-                let window_size = self.rcx.window.get_size();
+                let window_size = self.rcx.window.get_physical_size();
 
                 if window_size.0 == 0 || window_size.1 == 0 {
                     return;
                 }
-
-                self.rcx
-                    .previous_frame_end
-                    .as_mut()
-                    .unwrap()
-                    .cleanup_finished();
 
                 if self.rcx.recreate_swapchain {
                     let (new_swapchain, new_images) = self
@@ -480,6 +472,7 @@ impl App {
                 match future.map_err(Validated::unwrap) {
                     Ok(mut future) => {
                         future.cleanup_finished();
+                        // future.wait(None).unwrap();
                         self.rcx.previous_frame_end = Some(future.boxed());
                     }
                     Err(VulkanError::OutOfDate) => {
@@ -490,6 +483,8 @@ impl App {
                         panic!("failed to flush future: {e}");
                     }
                 }
+
+                self.rcx.window.request_redraw();
 
                 let now = std::time::Instant::now();
                 let dt = now.duration_since(self.rcx.time);

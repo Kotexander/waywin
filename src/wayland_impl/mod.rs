@@ -1,16 +1,12 @@
 use crate::event::{Event, WindowEvent};
 use std::sync::Weak;
 use wayland_client::{
-    delegate_noop,
-    globals::{registry_queue_init, GlobalListContents},
+    globals::registry_queue_init,
     protocol::{
-        wl_compositor::WlCompositor,
-        wl_keyboard::WlKeyboard,
-        wl_pointer::WlPointer,
-        wl_registry::{self, WlRegistry},
-        wl_seat::{self, Capability, WlSeat},
+        wl_compositor::WlCompositor, wl_keyboard::WlKeyboard, wl_pointer::WlPointer,
+        wl_seat::WlSeat,
     },
-    Connection, Dispatch, EventQueue, QueueHandle, WEnum,
+    Connection, QueueHandle,
 };
 use wayland_protocols::{
     wp::{
@@ -23,140 +19,38 @@ use wayland_protocols::{
     },
     xdg::{
         decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
-        shell::client::xdg_wm_base::{self, XdgWmBase},
+        shell::client::xdg_wm_base::XdgWmBase,
     },
 };
 pub use window::Window;
 use window::WindowInner;
 
+mod proxy;
 mod window;
 
 #[derive(Default)]
 struct WaywinState {
-    event_hook: Option<Box<dyn FnMut(WindowEvent, &mut bool)>>,
-    running: bool,
-
     pointer: Option<WlPointer>,
     relative_pointer: Option<ZwpRelativePointerV1>,
     keyboard: Option<WlKeyboard>,
     relative_pointer_manager: Option<ZwpRelativePointerManagerV1>,
 }
-impl WaywinState {
-    pub fn hook(&mut self, event: WindowEvent) {
-        if let Some(hook) = &mut self.event_hook {
-            hook(event, &mut self.running);
+impl Drop for WaywinState {
+    fn drop(&mut self) {
+        if let Some(s) = self.pointer.take() {
+            s.release()
+        }
+        if let Some(s) = self.relative_pointer.take() {
+            s.destroy()
+        }
+        if let Some(s) = self.keyboard.take() {
+            s.release()
+        }
+        if let Some(s) = self.relative_pointer_manager.take() {
+            s.destroy()
         }
     }
 }
-
-impl Dispatch<WlRegistry, GlobalListContents> for WaywinState {
-    fn event(
-        _state: &mut Self,
-        _proxy: &WlRegistry,
-        _event: wl_registry::Event,
-        _data: &GlobalListContents,
-        _conn: &Connection,
-        _qhandle: &wayland_client::QueueHandle<Self>,
-    ) {
-        /* react to dynamic global events here */
-    }
-}
-impl Dispatch<XdgWmBase, ()> for WaywinState {
-    fn event(
-        _state: &mut Self,
-        proxy: &XdgWmBase,
-        event: <XdgWmBase as wayland_client::Proxy>::Event,
-        _data: &(),
-        _conn: &Connection,
-        _qhandle: &QueueHandle<Self>,
-    ) {
-        match event {
-            xdg_wm_base::Event::Ping { serial } => {
-                proxy.pong(serial);
-            }
-            _ => unimplemented!(),
-        }
-    }
-}
-impl Dispatch<WlSeat, ()> for WaywinState {
-    fn event(
-        state: &mut Self,
-        proxy: &WlSeat,
-        event: <WlSeat as wayland_client::Proxy>::Event,
-        _data: &(),
-        _conn: &Connection,
-        qhandle: &QueueHandle<Self>,
-    ) {
-        match event {
-            wl_seat::Event::Capabilities { capabilities } => {
-                state.pointer = None;
-                state.keyboard = None;
-                state.relative_pointer = None;
-                if let WEnum::Value(cap) = capabilities {
-                    if cap.intersects(Capability::Pointer) {
-                        state.pointer = Some(proxy.get_pointer(qhandle, ()));
-                        state.relative_pointer = state
-                            .pointer
-                            .as_ref()
-                            .zip(state.relative_pointer_manager.as_ref())
-                            .map(|(pointer, manager)| {
-                                manager.get_relative_pointer(pointer, qhandle, ())
-                            });
-                    }
-                    if cap.intersects(Capability::Keyboard) {
-                        state.keyboard = Some(proxy.get_keyboard(qhandle, ()));
-                    }
-                }
-            }
-            wl_seat::Event::Name { name: _ } => {
-                // TODO
-            }
-            _ => unimplemented!(),
-        }
-    }
-}
-impl Dispatch<WlPointer, ()> for WaywinState {
-    fn event(
-        state: &mut Self,
-        proxy: &WlPointer,
-        event: <WlPointer as wayland_client::Proxy>::Event,
-        data: &(),
-        conn: &Connection,
-        qhandle: &QueueHandle<Self>,
-    ) {
-        log::debug!("{event:?}");
-    }
-}
-impl Dispatch<WlKeyboard, ()> for WaywinState {
-    fn event(
-        state: &mut Self,
-        proxy: &WlKeyboard,
-        event: <WlKeyboard as wayland_client::Proxy>::Event,
-        data: &(),
-        conn: &Connection,
-        qhandle: &QueueHandle<Self>,
-    ) {
-        log::debug!("{event:?}");
-    }
-}
-impl Dispatch<ZwpRelativePointerV1, ()> for WaywinState {
-    fn event(
-        state: &mut Self,
-        proxy: &ZwpRelativePointerV1,
-        event: <ZwpRelativePointerV1 as wayland_client::Proxy>::Event,
-        data: &(),
-        conn: &Connection,
-        qhandle: &QueueHandle<Self>,
-    ) {
-        log::debug!("{event:?}");
-    }
-}
-
-delegate_noop!(WaywinState: WlCompositor);
-delegate_noop!(WaywinState: ZxdgDecorationManagerV1);
-delegate_noop!(WaywinState: WpViewporter);
-delegate_noop!(WaywinState: WpFractionalScaleManagerV1);
-delegate_noop!(WaywinState: ZwpRelativePointerManagerV1);
 
 pub struct Waywin {
     compositor: WlCompositor,
@@ -166,7 +60,8 @@ pub struct Waywin {
     viewporter: Option<WpViewporter>,
     scaling: Option<WpFractionalScaleManagerV1>,
 
-    event_queue: EventQueue<WaywinState>,
+    // event_queue: EventQueue<WaywinState>,
+    event_loop: calloop::EventLoop<'static, WaywinState>,
     qhandle: QueueHandle<WaywinState>,
     connection: Connection,
     state: WaywinState,
@@ -199,6 +94,11 @@ impl Waywin {
         let mut state = WaywinState::default();
         state.relative_pointer_manager = globals.bind(&qhandle, 1..=1, ()).ok();
 
+        let event_loop = calloop::EventLoop::try_new().unwrap();
+        calloop_wayland_source::WaylandSource::new(connection.clone(), event_queue)
+            .insert(event_loop.handle())
+            .unwrap();
+
         Ok(Self {
             compositor,
             xdg_wm_base,
@@ -207,7 +107,8 @@ impl Waywin {
             viewporter,
             scaling,
 
-            event_queue,
+            // event_queue,
+            event_loop,
             connection,
             state,
             qhandle,
@@ -215,37 +116,69 @@ impl Waywin {
             windows: vec![],
         })
     }
-    pub fn run(&mut self, event_hook: impl FnMut(WindowEvent, &mut bool) + 'static) {
-        self.state.event_hook = Some(Box::new(event_hook));
-        self.state.running = true;
+    pub fn run(&mut self, mut event_hook: impl FnMut(WindowEvent) + 'static) {
+        self.event_loop
+            .run(None, &mut self.state, |_| {
+                self.windows.retain(|window| {
+                    if let Some(window) = window.upgrade() {
+                        let state = window.state.lock().unwrap();
+                        let mut prev_state = window.prev_state.lock().unwrap();
 
-        while self.state.running {
-            self.event_queue.dispatch_pending(&mut self.state).unwrap();
+                        let scaled = prev_state.scale != state.scale;
+                        let resized = prev_state.size != state.size;
+                        *prev_state = *state;
 
-            self.connection.flush().unwrap();
-            let read = self.event_queue.prepare_read().unwrap();
-            read.read().unwrap();
-            self.event_queue.dispatch_pending(&mut self.state).unwrap();
+                        let size = state.size;
 
-            self.windows.retain(|window| {
-                if let Some(window) = window.upgrade() {
-                    // log::info!("{} {}", window.id(), window.)
-                    if window.reset_redraw() {
-                        self.state.hook(WindowEvent {
-                            kind: Event::Paint,
-                            window_id: window.id(),
-                        });
+                        drop(state);
+                        drop(prev_state);
+
+                        if scaled {
+                            event_hook(WindowEvent {
+                                kind: Event::NewScaleFactor,
+                                window_id: window.id(),
+                            });
+                        }
+                        if resized || scaled {
+                            if let Some((viewport, _)) = &window.viewport_scaling {
+                                viewport.set_destination(size.0, size.1);
+                            }
+                            event_hook(WindowEvent {
+                                kind: Event::Resized,
+                                window_id: window.id(),
+                            });
+                        }
+
+                        if window.reset_redraw() || resized || scaled {
+                            event_hook(WindowEvent {
+                                kind: Event::Paint,
+                                window_id: window.id(),
+                            });
+                        }
+                        true
+                    } else {
+                        false
                     }
-                    true
-                } else {
-                    false
-                }
-            });
-        }
-        self.state.event_hook = None;
+                });
+            })
+            .unwrap();
     }
 }
-
+impl Drop for Waywin {
+    fn drop(&mut self) {
+        if let Some(s) = self.scaling.take() {
+            s.destroy();
+        }
+        if let Some(s) = self.viewporter.take() {
+            s.destroy();
+        }
+        if let Some(s) = self.decoration.take() {
+            s.destroy();
+        }
+        self.seat.release();
+        self.xdg_wm_base.destroy(); // TODO: don't destroy while windows are up
+    }
+}
 impl std::fmt::Debug for Waywin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Waywin").finish_non_exhaustive()

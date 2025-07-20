@@ -35,7 +35,7 @@ impl Waywin {
         backend_impl::Window::new(&mut self.backend_impl, title)
             .map(|backend_impl| Window { backend_impl })
     }
-    pub fn run(&mut self, event_hook: impl FnMut(WindowEvent, &mut bool) + 'static) {
+    pub fn run(mut self, event_hook: impl FnMut(WindowEvent) + 'static) {
         self.backend_impl.run(event_hook)
     }
 }
@@ -44,11 +44,14 @@ pub struct Window {
     backend_impl: backend_impl::Window,
 }
 impl Window {
-    pub fn get_size(&self) -> (u32, u32) {
-        self.backend_impl.get_size()
+    pub fn get_physical_size(&self) -> (u32, u32) {
+        self.backend_impl.get_physical_size()
     }
-    pub fn get_scale_factor(&self) -> f64 {
-        self.backend_impl.get_scale_factor()
+    pub fn get_logical_size(&self) -> (f64, f64) {
+        self.backend_impl.get_logical_size()
+    }
+    pub fn get_scale(&self) -> f64 {
+        self.backend_impl.get_scale()
     }
     pub fn request_redraw(&self) {
         self.backend_impl.request_redraw()
