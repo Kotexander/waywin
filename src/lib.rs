@@ -64,6 +64,11 @@ impl Window {
     }
 }
 
+impl rwh::HasDisplayHandle for Waywin {
+    fn display_handle(&self) -> std::result::Result<rwh::DisplayHandle<'_>, rwh::HandleError> {
+        self.backend_impl.display_handle()
+    }
+}
 impl rwh::HasWindowHandle for Window {
     fn window_handle(&self) -> std::result::Result<rwh::WindowHandle<'_>, rwh::HandleError> {
         self.backend_impl.window_handle()

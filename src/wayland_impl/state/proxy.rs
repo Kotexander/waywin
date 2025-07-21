@@ -4,7 +4,6 @@ use wayland_client::{
     globals::GlobalListContents,
     protocol::{
         wl_compositor::WlCompositor,
-        wl_keyboard::WlKeyboard,
         wl_pointer::WlPointer,
         wl_registry::{self, WlRegistry},
         wl_seat::{self, Capability, WlSeat},
@@ -69,7 +68,7 @@ impl Dispatch<WlSeat, ()> for WaywinState {
                 if let Some(s) = state.pointer.take() {
                     s.release();
                 }
-                if let Some(s) = state.keyboard.take() {
+                if let Some(s) = state.keyboard.keyboard.take() {
                     s.release();
                 }
                 if let Some(s) = state.relative_pointer.take() {
@@ -87,7 +86,8 @@ impl Dispatch<WlSeat, ()> for WaywinState {
                             });
                     }
                     if cap.intersects(Capability::Keyboard) {
-                        state.keyboard = Some(proxy.get_keyboard(qhandle, ()));
+                        state.keyboard.keyboard = Some(proxy.get_keyboard(qhandle, ()));
+                        // calloop::timer::Timer::from_duration(duration)
                     }
                 }
             }
@@ -110,18 +110,7 @@ impl Dispatch<WlPointer, ()> for WaywinState {
         log::debug!("{event:?}");
     }
 }
-impl Dispatch<WlKeyboard, ()> for WaywinState {
-    fn event(
-        _state: &mut Self,
-        _proxy: &WlKeyboard,
-        event: <WlKeyboard as wayland_client::Proxy>::Event,
-        _data: &(),
-        _conn: &Connection,
-        _qhandle: &QueueHandle<Self>,
-    ) {
-        log::debug!("{event:?}");
-    }
-}
+
 impl Dispatch<ZwpRelativePointerV1, ()> for WaywinState {
     fn event(
         _state: &mut Self,

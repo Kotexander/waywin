@@ -1,12 +1,146 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Event {
     Paint,
     Close,
     Resized,
     NewScaleFactor,
     Focus(bool),
+    Key {
+        down: bool,
+        physical_key: PhysicalKey,
+        text: Text,
+    },
 }
-#[derive(Debug, Clone, Copy, PartialEq)]
+
+#[derive(Debug, Clone, Copy)]
+pub enum Key {
+    Tab,
+    LeftArrow,
+    RightArrow,
+    UpArrow,
+    DownArrow,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+    Insert,
+    Delete,
+    Backspace,
+    Space,
+    Enter,
+    Escape,
+    LCtrl,
+    LShift,
+    LAlt,
+    LSuper,
+    RCtrl,
+    RShift,
+    RAlt,
+    RSuper,
+    Menu,
+    Key1,
+    Key2,
+    Key3,
+    Key4,
+    Key5,
+    Key6,
+    Key7,
+    Key8,
+    Key9,
+    Key0,
+    Numpad1,
+    Numpad2,
+    Numpad3,
+    Numpad4,
+    Numpad5,
+    Numpad6,
+    Numpad7,
+    Numpad8,
+    Numpad9,
+    Numpad0,
+    NumpadDecimal,
+    NumpadDivide,
+    NumpadMultiply,
+    NumpadSubtract,
+    NumpadAdd,
+    NumpadEnter,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    Quote,
+    Comma,
+    Minus,
+    Period,
+    Slash,
+    Backslash,
+    Semicolon,
+    Equal,
+    LBracket,
+    RBracket,
+    Grave,
+    CapsLock,
+    ScrollLock,
+    NumLock,
+    PrintScreen,
+    Pause,
+}
+#[derive(Debug, Clone, Copy)]
+pub enum PhysicalKey {
+    Key(Key),
+    Unknown(u32),
+}
+
+#[derive(Debug, Clone)]
+pub enum Text {
+    Printable(String),
+    Control(String),
+}
+impl From<String> for Text {
+    fn from(value: String) -> Self {
+        if value.chars().all(|c| !c.is_control()) && !value.is_empty() {
+            Self::Printable(value)
+        } else {
+            Self::Control(value)
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct WindowEvent {
     pub kind: Event,
     pub window_id: usize,

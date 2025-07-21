@@ -58,7 +58,7 @@ pub struct WindowInner {
     toplevel: XdgToplevel,
 
     decoration: Option<ZxdgToplevelDecorationV1>,
-    pub(crate) viewport_scaling: Option<(WpViewport, WpFractionalScaleV1)>,
+    viewport_scaling: Option<(WpViewport, WpFractionalScaleV1)>,
 
     // qhandle: QueueHandle<WaywinState>,
     // frame: AtomicBool,
@@ -70,7 +70,6 @@ pub struct WindowInner {
 
     // for HasDisplayHandle
     connection: Connection,
-
     signal: calloop::LoopSignal,
 }
 impl WindowInner {
@@ -119,37 +118,44 @@ pub struct Window {
 }
 impl Window {
     pub fn new(waywin: &mut Waywin, title: &str) -> Result<Self, String> {
+        let waywin_state = &mut waywin.state;
         // this freeze might not be needed since a window shouldn't be created while the event queue is polled
-        let freeze = waywin.qhandle.freeze();
+        let freeze = waywin_state.qhandle.freeze();
         let inner = Arc::new_cyclic(|weak| {
             let surface = {
-                waywin
+                waywin_state
                     .compositor
-                    .create_surface(&waywin.qhandle, weak.clone())
+                    .create_surface(&waywin_state.qhandle, weak.clone())
             };
-            let xdg_surface =
-                waywin
-                    .xdg_wm_base
-                    .get_xdg_surface(&surface, &waywin.qhandle, weak.clone());
-            let toplevel = xdg_surface.get_toplevel(&waywin.qhandle, weak.clone());
+            let xdg_surface = waywin_state.xdg_wm_base.get_xdg_surface(
+                &surface,
+                &waywin_state.qhandle,
+                weak.clone(),
+            );
+            let toplevel = xdg_surface.get_toplevel(&waywin_state.qhandle, weak.clone());
             toplevel.set_title(title.to_owned());
-            toplevel.set_app_id(waywin.app_id.clone());
+            toplevel.set_app_id(waywin_state.app_id.clone());
 
-            let decoration = waywin.decoration.as_ref().map(|decoration| {
-                let decor =
-                    decoration.get_toplevel_decoration(&toplevel, &waywin.qhandle, weak.clone());
+            let decoration = waywin_state.decoration.as_ref().map(|decoration| {
+                let decor = decoration.get_toplevel_decoration(
+                    &toplevel,
+                    &waywin_state.qhandle,
+                    weak.clone(),
+                );
                 decor.set_mode(Mode::ServerSide);
                 decor
             });
 
-            let viewport_scaling = waywin.viewporter.as_ref().zip(waywin.scaling.as_ref()).map(
-                |(viewporter, scaling)| {
+            let viewport_scaling = waywin_state
+                .viewporter
+                .as_ref()
+                .zip(waywin_state.scaling.as_ref())
+                .map(|(viewporter, scaling)| {
                     (
-                        viewporter.get_viewport(&surface, &waywin.qhandle, weak.clone()),
-                        scaling.get_fractional_scale(&surface, &waywin.qhandle, weak.clone()),
+                        viewporter.get_viewport(&surface, &waywin_state.qhandle, weak.clone()),
+                        scaling.get_fractional_scale(&surface, &waywin_state.qhandle, weak.clone()),
                     )
-                },
-            );
+                });
 
             surface.commit();
 
@@ -159,14 +165,14 @@ impl Window {
             };
             let configure = PendingConfigure::default();
 
-            waywin.windows.push(weak.clone());
+            waywin_state.windows.push(weak.clone());
 
             WindowInner {
                 surface,
                 xdg_surface,
                 toplevel,
                 decoration,
-                connection: waywin.connection.clone(),
+                connection: waywin_state.connection.clone(),
                 state: Mutex::new(state),
                 prev_state: Mutex::new(state),
                 configure: Mutex::new(configure),

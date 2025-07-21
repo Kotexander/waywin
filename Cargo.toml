@@ -28,6 +28,8 @@ wayland-protocols = { version = "0.32.8", features = [
 wayland-client = { version = "0.31.10", features = ["log"] }
 calloop = "0.14.2"
 calloop-wayland-source = { version = "0.4.0", features = ["log"] }
+xkbcommon = "0.8.0"
+
 # calloop-wayland-source = "0.4.0"
 
 

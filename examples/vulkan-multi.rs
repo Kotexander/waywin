@@ -26,6 +26,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
 
+use raw_window_handle::HasDisplayHandle;
 use std::{error::Error, sync::Arc};
 use vulkano::{
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
@@ -66,25 +67,118 @@ fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let mut waywin = Waywin::init("vulkano")?;
-    let window = Arc::new(waywin.create_window("Vulkan Example")?);
-    let mut app = App::new(window);
+
+    let vk_ctx = VulkanContex::new(&waywin);
+
+    let window = Arc::new(waywin.create_window("Vulkan window 1")?);
+    let mut app = App::new(vk_ctx.clone(), window);
+
+    let window2 = Arc::new(waywin.create_window("Vulkan window 2")?);
+    let mut app2 = App::new(vk_ctx, window2);
 
     waywin.run(move |e| {
         if !matches!(e.kind, Event::Paint) {
             log::info!("{e:?}");
         }
 
-        app.window_event(&e);
+        if app.rcx.window.id() == e.window_id {
+            app.window_event(&e);
+        }
+        if app2.rcx.window.id() == e.window_id {
+            app2.window_event(&e);
+        }
     });
 
     Ok(())
 }
 
-struct App {
-    _instance: Arc<Instance>,
+#[derive(Clone)]
+struct VulkanContex {
+    instance: Arc<Instance>,
     device: Arc<Device>,
     queue: Arc<Queue>,
-    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
+
+    mem_alloc: Arc<StandardMemoryAllocator>,
+    cmd_alloc: Arc<StandardCommandBufferAllocator>,
+}
+impl VulkanContex {
+    fn new(display: &impl HasDisplayHandle) -> Self {
+        let library = VulkanLibrary::new().unwrap();
+
+        let required_extensions = Surface::required_extensions(display).unwrap();
+
+        let instance = Instance::new(
+            library,
+            InstanceCreateInfo {
+                enabled_extensions: required_extensions,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let device_extensions = DeviceExtensions {
+            khr_swapchain: true,
+            ..DeviceExtensions::empty()
+        };
+
+        let (physical_device, queue_family_index) = instance
+            .enumerate_physical_devices()
+            .unwrap()
+            .filter(|p| p.supported_extensions().contains(&device_extensions))
+            .filter_map(|p| {
+                p.queue_family_properties()
+                    .iter()
+                    .enumerate()
+                    .position(|(i, q)| {
+                        q.queue_flags.intersects(QueueFlags::GRAPHICS)
+                            && p.presentation_support(i as u32, display).unwrap()
+                    })
+                    .map(|i| (p, i as u32))
+            })
+            .next()
+            .expect("no suitable physical device found");
+
+        log::info!(
+            "Using device: {} (type: {:?})",
+            physical_device.properties().device_name,
+            physical_device.properties().device_type,
+        );
+
+        let (device, mut queues) = Device::new(
+            physical_device,
+            DeviceCreateInfo {
+                enabled_extensions: device_extensions,
+                queue_create_infos: vec![QueueCreateInfo {
+                    queue_family_index,
+                    ..Default::default()
+                }],
+
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let queue = queues.next().unwrap();
+
+        let mem_alloc = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
+
+        let cmd_alloc = Arc::new(StandardCommandBufferAllocator::new(
+            device.clone(),
+            Default::default(),
+        ));
+
+        Self {
+            instance,
+            device,
+            queue,
+            mem_alloc,
+            cmd_alloc,
+        }
+    }
+}
+
+struct App {
+    vk_ctx: VulkanContex,
     vertex_buffer: Subbuffer<[MyVertex]>,
     rcx: RenderContext,
 }
@@ -261,71 +355,7 @@ impl RenderContext {
 }
 
 impl App {
-    fn new(window: Arc<Window>) -> Self {
-        let library = VulkanLibrary::new().unwrap();
-
-        let required_extensions = Surface::required_extensions(&window).unwrap();
-
-        let instance = Instance::new(
-            library,
-            InstanceCreateInfo {
-                enabled_extensions: required_extensions,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        let device_extensions = DeviceExtensions {
-            khr_swapchain: true,
-            ..DeviceExtensions::empty()
-        };
-
-        let (physical_device, queue_family_index) = instance
-            .enumerate_physical_devices()
-            .unwrap()
-            .filter(|p| p.supported_extensions().contains(&device_extensions))
-            .filter_map(|p| {
-                p.queue_family_properties()
-                    .iter()
-                    .enumerate()
-                    .position(|(i, q)| {
-                        q.queue_flags.intersects(QueueFlags::GRAPHICS)
-                            && p.presentation_support(i as u32, &window).unwrap()
-                    })
-                    .map(|i| (p, i as u32))
-            })
-            .next()
-            .expect("no suitable physical device found");
-
-        log::info!(
-            "Using device: {} (type: {:?})",
-            physical_device.properties().device_name,
-            physical_device.properties().device_type,
-        );
-
-        let (device, mut queues) = Device::new(
-            physical_device,
-            DeviceCreateInfo {
-                enabled_extensions: device_extensions,
-                queue_create_infos: vec![QueueCreateInfo {
-                    queue_family_index,
-                    ..Default::default()
-                }],
-
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        let queue = queues.next().unwrap();
-
-        let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
-
-        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
-            device.clone(),
-            Default::default(),
-        ));
-
+    fn new(vk_ctx: VulkanContex, window: Arc<Window>) -> Self {
         let vertices = [
             MyVertex {
                 position: [-0.5, -0.25],
@@ -338,7 +368,7 @@ impl App {
             },
         ];
         let vertex_buffer = Buffer::from_iter(
-            memory_allocator,
+            vk_ctx.mem_alloc.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
                 ..Default::default()
@@ -352,13 +382,10 @@ impl App {
         )
         .unwrap();
 
-        let rcx = RenderContext::new(window, &instance, &device);
+        let rcx = RenderContext::new(window, &vk_ctx.instance, &vk_ctx.device);
 
         App {
-            _instance: instance,
-            device,
-            queue,
-            command_buffer_allocator,
+            vk_ctx,
             vertex_buffer,
             rcx,
         }
@@ -418,8 +445,8 @@ impl App {
                 }
 
                 let mut builder = AutoCommandBufferBuilder::primary(
-                    self.command_buffer_allocator.clone(),
-                    self.queue.queue_family_index(),
+                    self.vk_ctx.cmd_alloc.clone(),
+                    self.vk_ctx.queue.queue_family_index(),
                     CommandBufferUsage::OneTimeSubmit,
                 )
                 .unwrap();
@@ -458,10 +485,10 @@ impl App {
                     .take()
                     .unwrap()
                     .join(acquire_future)
-                    .then_execute(self.queue.clone(), command_buffer)
+                    .then_execute(self.vk_ctx.queue.clone(), command_buffer)
                     .unwrap()
                     .then_swapchain_present(
-                        self.queue.clone(),
+                        self.vk_ctx.queue.clone(),
                         SwapchainPresentInfo::swapchain_image_index(
                             self.rcx.swapchain.clone(),
                             image_index,
@@ -477,7 +504,8 @@ impl App {
                     }
                     Err(VulkanError::OutOfDate) => {
                         self.rcx.recreate_swapchain = true;
-                        self.rcx.previous_frame_end = Some(sync::now(self.device.clone()).boxed());
+                        self.rcx.previous_frame_end =
+                            Some(sync::now(self.vk_ctx.device.clone()).boxed());
                     }
                     Err(e) => {
                         panic!("failed to flush future: {e}");
