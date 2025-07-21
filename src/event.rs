@@ -8,12 +8,15 @@ pub enum Event {
     Key {
         down: bool,
         physical_key: PhysicalKey,
-        text: Text,
+        logical_key: LogicalKey,
+        text: String,
+        text_raw: String,
+        logical_key_unmodified: LogicalKey,
     },
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Key {
+pub enum KeyCode {
     Tab,
     LeftArrow,
     RightArrow,
@@ -121,23 +124,62 @@ pub enum Key {
 }
 #[derive(Debug, Clone, Copy)]
 pub enum PhysicalKey {
-    Key(Key),
+    KeyCode(KeyCode),
+    /// OS scancode
     Unknown(u32),
 }
 
-#[derive(Debug, Clone)]
-pub enum Text {
-    Printable(String),
-    Control(String),
+#[derive(Debug, Clone, Copy)]
+pub enum Key {
+    Backspace,
+    Tab,
+    Enter,
+    Shift,
+    LShift,
+    RShift,
+    Ctrl,
+    LCtrl,
+    RCtrl,
+    Alt,
+    LAlt,
+    RAlt,
+    Pause,
+    CapsLock,
+    Escape,
+    PageUp,
+    PageDown,
+    End,
+    Home,
+    LeftArrow,
+    RightArrow,
+    UpArrow,
+    DownArrow,
+    PrintScreen,
+    Insert,
+    Delete,
+    LSuper,
+    RSuper,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    NumLock,
+    ScrollLock,
 }
-impl From<String> for Text {
-    fn from(value: String) -> Self {
-        if value.chars().all(|c| !c.is_control()) && !value.is_empty() {
-            Self::Printable(value)
-        } else {
-            Self::Control(value)
-        }
-    }
+#[derive(Debug, Clone)]
+pub enum LogicalKey {
+    Key(Key),
+    Character(String),
+    /// OS symbol
+    Unknown(u32),
 }
 
 #[derive(Debug, Clone)]
