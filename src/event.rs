@@ -1,3 +1,5 @@
+use smol_str::SmolStr;
+
 #[derive(Debug, Clone)]
 pub enum Event {
     Paint,
@@ -9,8 +11,8 @@ pub enum Event {
         down: bool,
         physical_key: PhysicalKey,
         logical_key: LogicalKey,
-        text: String,
-        text_raw: String,
+        text: SmolStr,
+        text_raw: SmolStr,
         logical_key_unmodified: LogicalKey,
     },
 }
@@ -175,11 +177,20 @@ pub enum Key {
     ScrollLock,
 }
 #[derive(Debug, Clone)]
-pub enum LogicalKey {
+pub enum LogicalKey<Str = SmolStr> {
     Key(Key),
-    Character(String),
+    Character(Str),
     /// OS symbol
     Unknown(u32),
+}
+impl LogicalKey<SmolStr> {
+    pub fn as_ref(&self) -> LogicalKey<&str> {
+        match self {
+            LogicalKey::Key(key) => LogicalKey::Key(*key),
+            LogicalKey::Character(str) => LogicalKey::Character(str.as_str()),
+            LogicalKey::Unknown(unk) => LogicalKey::Unknown(*unk),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

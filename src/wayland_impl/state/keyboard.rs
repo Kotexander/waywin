@@ -1,5 +1,6 @@
 use super::WaywinState;
 use crate::event::{Event, Key, KeyCode, LogicalKey, PhysicalKey, WindowEvent};
+use smol_str::SmolStr;
 use std::time::Duration;
 use wayland_client::{
     protocol::wl_keyboard::{self, KeyState, KeymapFormat, WlKeyboard},
@@ -27,6 +28,37 @@ pub struct KeyboardState {
     pub xkb_state: Option<xkb::State>,
 }
 
+fn keysym_to_utf8_smol(keysym: xkb::Keysym) -> SmolStr {
+    use std::ffi::*;
+    unsafe {
+        let buf: &mut [c_char] = &mut [0; 8];
+        let ptr = &mut buf[0] as *mut c_char;
+        match xkb::ffi::xkb_keysym_to_utf8(keysym.raw(), ptr, 8) {
+            0 => SmolStr::new_static(""),
+            -1 => {
+                panic!("Key doesn't fit in buffer")
+            }
+            len => {
+                let slice: &[u8] = std::slice::from_raw_parts(ptr as *const _, len as usize - 1);
+                SmolStr::new_inline(std::str::from_utf8_unchecked(slice))
+            }
+        }
+    }
+}
+fn xkb_state_key_get_utf8_smol(xkb_state: &xkb::State, key: xkb::Keycode) -> SmolStr {
+    use std::ffi::*;
+    unsafe {
+        const BUF_LEN: usize = 64;
+        let buf: &mut [c_char] = &mut [0; BUF_LEN];
+        let ptr = &mut buf[0] as *mut c_char;
+        let ret =
+            xkb::ffi::xkb_state_key_get_utf8(xkb_state.get_raw_ptr(), key.into(), ptr, BUF_LEN);
+        let len = ret.max(0).min(BUF_LEN as i32);
+        let slice: &[u8] = std::slice::from_raw_parts(ptr as *const _, len as usize);
+        SmolStr::new_inline(std::str::from_utf8_unchecked(slice))
+    }
+}
+
 fn generate_event(
     xkb_state: &xkb::State,
     down: bool,
@@ -44,10 +76,10 @@ fn generate_event(
     let logical_key_unmodified = LogicalKey::from(unmodified_keysym);
 
     let text = match &logical_key {
-        LogicalKey::Key(_) | LogicalKey::Unknown(_) => xkb::keysym_to_utf8(keysym),
+        LogicalKey::Key(_) | LogicalKey::Unknown(_) => keysym_to_utf8_smol(keysym),
         LogicalKey::Character(c) => c.clone(),
     };
-    let text_raw = xkb_state.key_get_utf8(wayland_key);
+    let text_raw = xkb_state_key_get_utf8_smol(xkb_state, wayland_key);
 
     Event::Key {
         down,
@@ -432,8 +464,7 @@ impl From<xkb::Keysym> for LogicalKey {
             xkb::Keysym::Pause => Key::Pause,
 
             _ => {
-                dbg!(value);
-                let character = xkb::keysym_to_utf8(value);
+                let character = keysym_to_utf8_smol(value);
                 if character.is_empty() {
                     return Self::Unknown(value.raw());
                 } else {

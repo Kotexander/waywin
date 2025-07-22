@@ -1,10 +1,9 @@
-use std::ptr::NonNull;
-
 use crate::{
     event::{Event, WindowEvent},
     wayland_impl::state::WaywinState,
 };
 use raw_window_handle as rwh;
+use std::ptr::NonNull;
 use wayland_client::Proxy;
 pub use window::Window;
 
