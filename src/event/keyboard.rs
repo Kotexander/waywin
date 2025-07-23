@@ -1,22 +1,5 @@
 use smol_str::SmolStr;
 
-#[derive(Debug, Clone)]
-pub enum Event {
-    Paint,
-    Close,
-    Resized,
-    NewScaleFactor,
-    Focus(bool),
-    Key {
-        down: bool,
-        physical_key: PhysicalKey,
-        logical_key: LogicalKey,
-        text: SmolStr,
-        text_raw: SmolStr,
-        logical_key_unmodified: LogicalKey,
-    },
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum KeyCode {
     Tab,
@@ -133,34 +116,98 @@ pub enum PhysicalKey {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Key {
-    Backspace,
     Tab,
     Enter,
+    Space,
+    Period,
+
     Shift,
     LShift,
     RShift,
+
     Ctrl,
     LCtrl,
     RCtrl,
+
+    Super,
+    LSuper,
+    RSuper,
+
     Alt,
     LAlt,
     RAlt,
-    Pause,
+
     CapsLock,
+    NumLock,
+    ScrollLock,
+    PrintScreen,
+
+    Backspace,
     Escape,
+
+    Pause,
+    Menu,
+
     PageUp,
     PageDown,
     End,
     Home,
+    Delete,
+    Insert,
+
     LeftArrow,
     RightArrow,
     UpArrow,
     DownArrow,
-    PrintScreen,
-    Insert,
-    Delete,
-    LSuper,
-    RSuper,
+
+    Plus,
+    Minus,
+    Asterisk,
+    Slash,
+
+    NumpadAdd,
+    NumpadSubtract,
+    NumpadMultiply,
+    NumpadDivide,
+    NumpadDecimal,
+
+    NumpadLeftArrow,
+    NumpadRightArrow,
+    NumpadUpArrow,
+    NumpadDownArrow,
+
+    NumpadPageUp,
+    NumpadPageDown,
+    NumpadEnd,
+    NumpadHome,
+    NumpadDelete,
+    NumpadInsert,
+    NumpadBegin,
+
+    NumpadEnter,
+
+    Key1,
+    Key2,
+    Key3,
+    Key4,
+    Key5,
+    Key6,
+    Key7,
+    Key8,
+    Key9,
+    Key0,
+
+    Numpad1,
+    Numpad2,
+    Numpad3,
+    Numpad4,
+    Numpad5,
+    Numpad6,
+    Numpad7,
+    Numpad8,
+    Numpad9,
+    Numpad0,
+
     F1,
     F2,
     F3,
@@ -173,8 +220,6 @@ pub enum Key {
     F10,
     F11,
     F12,
-    NumLock,
-    ScrollLock,
 }
 #[derive(Debug, Clone)]
 pub enum LogicalKey<Str = SmolStr> {
@@ -193,8 +238,12 @@ impl LogicalKey<SmolStr> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct WindowEvent {
-    pub kind: Event,
-    pub window_id: usize,
-}
+// bitflags::bitflags! {
+//     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+//     pub struct KeyModifiers: u8 {
+//         const SHIFT = 1 << 0;
+//         const CTRL = 1 << 1;
+//         const ALT = 1 << 2;
+//         const SUPER = 1 << 3;
+//     }
+// }

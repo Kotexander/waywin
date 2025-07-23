@@ -59,9 +59,9 @@ fn xkb_state_key_get_utf8_smol(xkb_state: &xkb::State, key: xkb::Keycode) -> Smo
     }
 }
 
-fn generate_event(
+fn generate_down_event(
     xkb_state: &xkb::State,
-    down: bool,
+    // down: bool,
     wayland_key: xkb::Keycode,
     key: xkb::Keycode,
 ) -> Event {
@@ -82,7 +82,7 @@ fn generate_event(
     let text_raw = xkb_state_key_get_utf8_smol(xkb_state, wayland_key);
 
     Event::Key {
-        down,
+        down: true,
         physical_key,
         text,
         logical_key,
@@ -90,6 +90,32 @@ fn generate_event(
         logical_key_unmodified,
     }
 }
+
+fn generate_up_event(
+    xkb_state: &xkb::State,
+    wayland_key: xkb::Keycode,
+    key: xkb::Keycode,
+) -> Event {
+    let layout = xkb_state.key_get_layout(wayland_key);
+    let keysym = xkb_state.key_get_one_sym(wayland_key);
+    let unmodified_keysym = xkb_state
+        .get_keymap()
+        .key_get_syms_by_level(wayland_key, layout, 0)[0];
+
+    let physical_key = PhysicalKey::from(key);
+    let logical_key = LogicalKey::from(keysym);
+    let logical_key_unmodified = LogicalKey::from(unmodified_keysym);
+
+    Event::Key {
+        down: false,
+        physical_key,
+        text: SmolStr::new_static(""),
+        logical_key,
+        text_raw: SmolStr::new_static(""),
+        logical_key_unmodified,
+    }
+}
+
 impl Default for KeyboardState {
     fn default() -> Self {
         Self {
@@ -191,7 +217,7 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                 };
 
                 if let Some(xkb_state) = &state.keyboard.xkb_state {
-                    let kind = generate_event(xkb_state, true, wayland_key, key);
+                    let kind = generate_down_event(xkb_state, wayland_key, key);
 
                     state.events.push(WindowEvent {
                         kind: kind.clone(),
@@ -254,7 +280,7 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                 }
 
                 if let Some(xkb_state) = &state.keyboard.xkb_state {
-                    let kind = generate_event(xkb_state, false, wayland_key, key);
+                    let kind = generate_up_event(xkb_state, wayland_key, key);
 
                     state.events.push(WindowEvent {
                         kind: kind.clone(),
@@ -279,6 +305,36 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
             } => {
                 if let Some(xkb_state) = &mut state.keyboard.xkb_state {
                     xkb_state.update_mask(mods_depressed, mods_latched, mods_locked, 0, 0, group);
+
+                    // let Some(id) = state.keyboard.focused_window else {
+                    //     log::warn!("recieved key modifiers event while no window is focused");
+                    //     return;
+                    // };
+
+                    // let key_modifiers = if xkb_state
+                    //     .mod_name_is_active(xkb::MOD_NAME_SHIFT, xkb::STATE_MODS_EFFECTIVE)
+                    // {
+                    //     KeyModifiers::SHIFT
+                    // } else {
+                    //     KeyModifiers::empty()
+                    // } | if xkb_state
+                    //     .mod_name_is_active(xkb::MOD_NAME_CTRL, xkb::STATE_MODS_EFFECTIVE)
+                    // {
+                    //     KeyModifiers::CTRL
+                    // } else {
+                    //     KeyModifiers::empty()
+                    // } | if xkb_state
+                    //     .mod_name_is_active(xkb::MOD_NAME_ALT, xkb::STATE_MODS_EFFECTIVE)
+                    // {
+                    //     KeyModifiers::ALT
+                    // } else {
+                    //     KeyModifiers::empty()
+                    // };
+
+                    // state.events.push(WindowEvent {
+                    //     kind: Event::KeyModifiers(key_modifiers),
+                    //     window_id: id,
+                    // });
                 }
             }
             wl_keyboard::Event::RepeatInfo { rate, delay } => {
@@ -421,16 +477,9 @@ impl From<xkb::Keysym> for LogicalKey {
     fn from(value: xkb::Keysym) -> Self {
         Self::Key(match value {
             xkb::Keysym::Tab => Key::Tab,
-            xkb::Keysym::Left | xkb::Keysym::KP_Left => Key::LeftArrow,
-            xkb::Keysym::Right | xkb::Keysym::KP_Right => Key::RightArrow,
-            xkb::Keysym::Up | xkb::Keysym::KP_Up => Key::UpArrow,
-            xkb::Keysym::Down | xkb::Keysym::KP_Down => Key::DownArrow,
-            xkb::Keysym::Page_Up | xkb::Keysym::KP_Page_Up => Key::PageUp,
-            xkb::Keysym::Page_Down | xkb::Keysym::KP_Page_Down => Key::PageDown,
-            xkb::Keysym::Home | xkb::Keysym::KP_Home => Key::Home,
-            xkb::Keysym::End | xkb::Keysym::KP_End => Key::End,
-            xkb::Keysym::Insert | xkb::Keysym::KP_Insert => Key::Insert,
-            xkb::Keysym::Delete | xkb::Keysym::KP_Delete => Key::Delete,
+            xkb::Keysym::space => Key::Space,
+            xkb::Keysym::period => Key::Period,
+
             xkb::Keysym::BackSpace => Key::Backspace,
             xkb::Keysym::Return => Key::Enter,
             xkb::Keysym::Escape => Key::Escape,
@@ -442,6 +491,62 @@ impl From<xkb::Keysym> for LogicalKey {
             xkb::Keysym::Shift_R => Key::RShift,
             xkb::Keysym::Alt_R => Key::RAlt,
             xkb::Keysym::Super_R => Key::RSuper,
+
+            xkb::Keysym::Left => Key::LeftArrow,
+            xkb::Keysym::Right => Key::RightArrow,
+            xkb::Keysym::Up => Key::UpArrow,
+            xkb::Keysym::Down => Key::DownArrow,
+            xkb::Keysym::Page_Up => Key::PageUp,
+            xkb::Keysym::Page_Down => Key::PageDown,
+            xkb::Keysym::Home => Key::Home,
+            xkb::Keysym::End => Key::End,
+            xkb::Keysym::Insert => Key::Insert,
+            xkb::Keysym::Delete => Key::Delete,
+
+            xkb::Keysym::plus => Key::Plus,
+            xkb::Keysym::minus => Key::Minus,
+            xkb::Keysym::asterisk => Key::Asterisk,
+            xkb::Keysym::slash => Key::Slash,
+
+            xkb::Keysym::KP_Add => Key::NumpadAdd,
+            xkb::Keysym::KP_Subtract => Key::NumpadSubtract,
+            xkb::Keysym::KP_Multiply => Key::NumpadMultiply,
+            xkb::Keysym::KP_Divide => Key::NumpadDivide,
+            xkb::Keysym::KP_Decimal => Key::NumpadDecimal,
+
+            xkb::Keysym::KP_Left => Key::NumpadLeftArrow,
+            xkb::Keysym::KP_Right => Key::NumpadRightArrow,
+            xkb::Keysym::KP_Up => Key::NumpadUpArrow,
+            xkb::Keysym::KP_Down => Key::NumpadDownArrow,
+            xkb::Keysym::KP_Page_Up => Key::NumpadPageUp,
+            xkb::Keysym::KP_Page_Down => Key::NumpadPageDown,
+            xkb::Keysym::KP_Home => Key::NumpadHome,
+            xkb::Keysym::KP_End => Key::NumpadEnd,
+            xkb::Keysym::KP_Insert => Key::NumpadInsert,
+            xkb::Keysym::KP_Delete => Key::NumpadDelete,
+            xkb::Keysym::KP_Begin => Key::NumpadBegin,
+
+            xkb::Keysym::_1 => Key::Key1,
+            xkb::Keysym::_2 => Key::Key2,
+            xkb::Keysym::_3 => Key::Key3,
+            xkb::Keysym::_4 => Key::Key4,
+            xkb::Keysym::_5 => Key::Key5,
+            xkb::Keysym::_6 => Key::Key6,
+            xkb::Keysym::_7 => Key::Key7,
+            xkb::Keysym::_8 => Key::Key8,
+            xkb::Keysym::_9 => Key::Key9,
+            xkb::Keysym::_0 => Key::Key0,
+
+            xkb::Keysym::KP_1 => Key::Numpad1,
+            xkb::Keysym::KP_2 => Key::Numpad2,
+            xkb::Keysym::KP_3 => Key::Numpad3,
+            xkb::Keysym::KP_4 => Key::Numpad4,
+            xkb::Keysym::KP_5 => Key::Numpad5,
+            xkb::Keysym::KP_6 => Key::Numpad6,
+            xkb::Keysym::KP_7 => Key::Numpad7,
+            xkb::Keysym::KP_8 => Key::Numpad8,
+            xkb::Keysym::KP_9 => Key::Numpad9,
+            xkb::Keysym::KP_0 => Key::Numpad0,
 
             xkb::Keysym::F1 => Key::F1,
             xkb::Keysym::F2 => Key::F2,
@@ -456,12 +561,15 @@ impl From<xkb::Keysym> for LogicalKey {
             xkb::Keysym::F11 => Key::F11,
             xkb::Keysym::F12 => Key::F12,
 
+            xkb::Keysym::KP_Enter => Key::NumpadEnter,
+
             xkb::Keysym::Caps_Lock => Key::CapsLock,
             xkb::Keysym::Scroll_Lock => Key::ScrollLock,
             xkb::Keysym::Num_Lock => Key::NumLock,
 
             xkb::Keysym::Print => Key::PrintScreen,
             xkb::Keysym::Pause => Key::Pause,
+            xkb::Keysym::Menu => Key::Menu,
 
             _ => {
                 let character = keysym_to_utf8_smol(value);
