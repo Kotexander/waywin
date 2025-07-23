@@ -61,7 +61,6 @@ fn xkb_state_key_get_utf8_smol(xkb_state: &xkb::State, key: xkb::Keycode) -> Smo
 
 fn generate_down_event(
     xkb_state: &xkb::State,
-    // down: bool,
     wayland_key: xkb::Keycode,
     key: xkb::Keycode,
 ) -> Event {
@@ -155,7 +154,6 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                         .unwrap()
                     };
                     let xkb_state = xkb::State::new(&keymap);
-                    // state.
                     state.keyboard.xkb_state = Some(xkb_state);
                 } else {
                     log::warn!("unkown keymap")

@@ -1,19 +1,16 @@
-use crate::{event::WindowEvent, wayland_impl::state::keyboard::KeyboardState};
-
 use super::window::WindowInner;
+use crate::event::WindowEvent;
+use keyboard::KeyboardState;
+use pointer::PointerState;
 use std::sync::Weak;
 use wayland_client::{
     globals::registry_queue_init,
-    protocol::{wl_compositor::WlCompositor, wl_pointer::WlPointer, wl_seat::WlSeat},
+    protocol::{wl_compositor::WlCompositor, wl_seat::WlSeat},
     Connection, EventQueue, QueueHandle,
 };
 use wayland_protocols::{
     wp::{
         fractional_scale::v1::client::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
-        relative_pointer::zv1::client::{
-            zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
-            zwp_relative_pointer_v1::ZwpRelativePointerV1,
-        },
         viewporter::client::wp_viewporter::WpViewporter,
     },
     xdg::{
@@ -23,6 +20,7 @@ use wayland_protocols::{
 };
 
 mod keyboard;
+mod pointer;
 mod proxy;
 
 pub struct WaywinState {
@@ -33,10 +31,8 @@ pub struct WaywinState {
     pub viewporter: Option<WpViewporter>,
     pub scaling: Option<WpFractionalScaleManagerV1>,
 
-    pub pointer: Option<WlPointer>,
-    pub relative_pointer: Option<ZwpRelativePointerV1>,
     pub keyboard: KeyboardState,
-    pub relative_pointer_manager: Option<ZwpRelativePointerManagerV1>,
+    pub pointer: PointerState,
 
     pub qhandle: QueueHandle<Self>,
     pub connection: Connection,
@@ -72,7 +68,6 @@ impl WaywinState {
         let viewporter = globals.bind(&qhandle, 1..=1, ()).ok();
         let scaling = globals.bind(&qhandle, 1..=1, ()).ok();
 
-        // let mut state = WaywinState::default();
         let relative_pointer_manager = globals.bind(&qhandle, 1..=1, ()).ok();
 
         Ok((
@@ -84,10 +79,11 @@ impl WaywinState {
                 viewporter,
                 scaling,
 
-                pointer: None,
-                relative_pointer: None,
+                pointer: PointerState {
+                    relative_pointer_manager,
+                    ..Default::default()
+                },
                 keyboard: KeyboardState::default(),
-                relative_pointer_manager,
 
                 connection,
                 qhandle,
@@ -102,16 +98,16 @@ impl WaywinState {
 }
 impl Drop for WaywinState {
     fn drop(&mut self) {
-        if let Some(s) = self.pointer.take() {
+        if let Some(s) = self.pointer.pointer.take() {
             s.release()
         }
-        if let Some(s) = self.relative_pointer.take() {
+        if let Some(s) = self.pointer.relative_pointer.take() {
             s.destroy()
         }
         if let Some(s) = self.keyboard.keyboard.take() {
             s.release()
         }
-        if let Some(s) = self.relative_pointer_manager.take() {
+        if let Some(s) = self.pointer.relative_pointer_manager.take() {
             s.destroy()
         }
 

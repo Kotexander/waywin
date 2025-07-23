@@ -3,11 +3,11 @@ compile_error!("waywin only supports 64-bit targets");
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 compile_error!("waywin only supports Linux and Windows");
 
-pub mod event;
-
 use event::WindowEvent;
 use raw_window_handle as rwh;
 use std::marker::PhantomData;
+
+pub mod event;
 
 #[cfg(target_os = "windows")]
 mod windows_impl;

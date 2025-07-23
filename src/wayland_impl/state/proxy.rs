@@ -4,7 +4,6 @@ use wayland_client::{
     globals::GlobalListContents,
     protocol::{
         wl_compositor::WlCompositor,
-        wl_pointer::WlPointer,
         wl_registry::{self, WlRegistry},
         wl_seat::{self, Capability, WlSeat},
     },
@@ -13,10 +12,7 @@ use wayland_client::{
 use wayland_protocols::{
     wp::{
         fractional_scale::v1::client::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
-        relative_pointer::zv1::client::{
-            zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
-            zwp_relative_pointer_v1::ZwpRelativePointerV1,
-        },
+        relative_pointer::zv1::client::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
         viewporter::client::wp_viewporter::WpViewporter,
     },
     xdg::{
@@ -65,29 +61,29 @@ impl Dispatch<WlSeat, ()> for WaywinState {
     ) {
         match event {
             wl_seat::Event::Capabilities { capabilities } => {
-                if let Some(s) = state.pointer.take() {
+                if let Some(s) = state.pointer.pointer.take() {
                     s.release();
                 }
                 if let Some(s) = state.keyboard.keyboard.take() {
                     s.release();
                 }
-                if let Some(s) = state.relative_pointer.take() {
+                if let Some(s) = state.pointer.relative_pointer.take() {
                     s.destroy();
                 }
                 if let WEnum::Value(cap) = capabilities {
                     if cap.intersects(Capability::Pointer) {
-                        state.pointer = Some(proxy.get_pointer(qhandle, ()));
-                        state.relative_pointer = state
+                        state.pointer.pointer = Some(proxy.get_pointer(qhandle, ()));
+                        state.pointer.relative_pointer = state
+                            .pointer
                             .pointer
                             .as_ref()
-                            .zip(state.relative_pointer_manager.as_ref())
+                            .zip(state.pointer.relative_pointer_manager.as_ref())
                             .map(|(pointer, manager)| {
                                 manager.get_relative_pointer(pointer, qhandle, ())
                             });
                     }
                     if cap.intersects(Capability::Keyboard) {
                         state.keyboard.keyboard = Some(proxy.get_keyboard(qhandle, ()));
-                        // calloop::timer::Timer::from_duration(duration)
                     }
                 }
             }
@@ -96,31 +92,6 @@ impl Dispatch<WlSeat, ()> for WaywinState {
             }
             _ => unimplemented!(),
         }
-    }
-}
-impl Dispatch<WlPointer, ()> for WaywinState {
-    fn event(
-        _state: &mut Self,
-        _proxy: &WlPointer,
-        event: <WlPointer as wayland_client::Proxy>::Event,
-        _data: &(),
-        _conn: &Connection,
-        _qhandle: &QueueHandle<Self>,
-    ) {
-        log::debug!("{event:?}");
-    }
-}
-
-impl Dispatch<ZwpRelativePointerV1, ()> for WaywinState {
-    fn event(
-        _state: &mut Self,
-        _proxy: &ZwpRelativePointerV1,
-        event: <ZwpRelativePointerV1 as wayland_client::Proxy>::Event,
-        _data: &(),
-        _conn: &Connection,
-        _qhandle: &QueueHandle<Self>,
-    ) {
-        log::debug!("{event:?}");
     }
 }
 

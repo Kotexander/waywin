@@ -18,7 +18,24 @@ pub enum Event {
         text_raw: SmolStr,
         logical_key_unmodified: LogicalKey,
     },
+    PointerEntered,
+    PointerLeft,
+    PointerMoved(f64, f64),
+    PointerButton {
+        down: bool,
+        button: PointerButton,
+    },
     // KeyModifiers(KeyModifiers),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum PointerButton {
+    Left,
+    Right,
+    Middle,
+    Forward,
+    Back,
+    Unknown(u32),
 }
 
 #[derive(Debug, Clone)]

@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     waywin.run(move |e| {
         if !matches!(e.kind, Event::Paint) {
-            log::info!("{e:?}");
+            println!("{e:#?}");
         }
 
         if app.rcx.window.id() == e.window_id {
