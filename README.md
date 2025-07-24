@@ -20,4 +20,3 @@ both windows and wayland are work in progress
 running as fast as wanted, while also staying consistent with windows
 - touch support
 - client side decorations
-- repeat keys
