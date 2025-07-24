@@ -25,7 +25,10 @@ pub enum Event {
         down: bool,
         button: PointerButton,
     },
-    // KeyModifiers(KeyModifiers),
+    Scroll {
+        direction: ScrollDirection,
+        value: f64,
+    }, // KeyModifiers(KeyModifiers),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -36,6 +39,20 @@ pub enum PointerButton {
     Forward,
     Back,
     Unknown(u32),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ScrollDirection {
+    Vertical,
+    Horizontal,
+}
+impl ScrollDirection {
+    pub fn is_vertical(&self) -> bool {
+        matches!(self, Self::Vertical)
+    }
+    pub fn is_horizontal(&self) -> bool {
+        matches!(self, Self::Horizontal)
+    }
 }
 
 #[derive(Debug, Clone)]

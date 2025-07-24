@@ -1,7 +1,7 @@
 use super::WaywinState;
-use crate::event::{Event, PointerButton, WindowEvent};
+use crate::event::{Event, PointerButton, ScrollDirection, WindowEvent};
 use wayland_client::{
-    protocol::wl_pointer::{ButtonState, WlPointer},
+    protocol::wl_pointer::{Axis, ButtonState, WlPointer},
     Connection, Dispatch, Proxy, QueueHandle, WEnum,
 };
 use wayland_protocols::wp::relative_pointer::zv1::client::{
@@ -123,16 +123,40 @@ impl Dispatch<WlPointer, ()> for WaywinState {
             } => {
                 log::error!("unknown pointer button state sent by OS")
             }
-            // wayland_client::protocol::wl_pointer::Event::Axis { time, axis, value } => todo!(),
+            wayland_client::protocol::wl_pointer::Event::Axis {
+                time: _,
+                axis: WEnum::Value(axis),
+                value,
+            } => {
+                let Some(id) = state.pointer.focused_window else {
+                    log::warn!("recieved a pointer scroll event while no window is focused");
+                    return;
+                };
+                state.events.push(WindowEvent {
+                    kind: Event::Scroll {
+                        direction: ScrollDirection::from(axis),
+                        value: -value,
+                    },
+                    window_id: id,
+                });
+            }
+            wayland_client::protocol::wl_pointer::Event::Axis {
+                time: _,
+                axis: WEnum::Unknown(_),
+                value: _,
+            } => {
+                log::error!("unknown pointer scroll axis sent by OS")
+            }
             wayland_client::protocol::wl_pointer::Event::Frame => {
                 // TODO: maybe collect pointer events into a frame
             }
-            // wayland_client::protocol::wl_pointer::Event::AxisSource { axis_source } => todo!(),
-            // wayland_client::protocol::wl_pointer::Event::AxisStop { time, axis } => todo!(),
-            // wayland_client::protocol::wl_pointer::Event::AxisDiscrete { axis, discrete } => todo!(),
-            // wayland_client::protocol::wl_pointer::Event::AxisValue120 { axis, value120 } => todo!(),
-            // wayland_client::protocol::wl_pointer::Event::AxisRelativeDirection { axis, direction } => todo!(),
-            _ => { //todo
+            wayland_client::protocol::wl_pointer::Event::AxisSource { .. } => {}
+            wayland_client::protocol::wl_pointer::Event::AxisStop { .. } => {}
+            wayland_client::protocol::wl_pointer::Event::AxisDiscrete { .. } => {}
+            wayland_client::protocol::wl_pointer::Event::AxisValue120 { .. } => {}
+            wayland_client::protocol::wl_pointer::Event::AxisRelativeDirection { .. } => {}
+            _ => {
+                unimplemented!()
             }
         }
     }
@@ -160,6 +184,16 @@ impl From<u32> for PointerButton {
             0x114 => Self::Forward,
             0x113 => Self::Back,
             _ => Self::Unknown(value),
+        }
+    }
+}
+
+impl From<Axis> for ScrollDirection {
+    fn from(value: Axis) -> Self {
+        match value {
+            Axis::VerticalScroll => Self::Vertical,
+            Axis::HorizontalScroll => Self::Horizontal,
+            _ => unimplemented!(),
         }
     }
 }
