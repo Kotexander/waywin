@@ -1,3 +1,5 @@
+use crate::event::{Event, WindowEvent};
+
 use super::{Waywin, WaywinState};
 use raw_window_handle as rwh;
 use std::{
@@ -315,7 +317,7 @@ impl Dispatch<XdgSurface, Weak<WindowInner>> for WaywinState {
 }
 impl Dispatch<XdgToplevel, Weak<WindowInner>> for WaywinState {
     fn event(
-        _state: &mut Self,
+        state: &mut Self,
         _proxy: &XdgToplevel,
         event: <XdgToplevel as wayland_client::Proxy>::Event,
         data: &Weak<WindowInner>,
@@ -336,11 +338,10 @@ impl Dispatch<XdgToplevel, Weak<WindowInner>> for WaywinState {
                 }
             }
             xdg_toplevel::Event::Close => {
-                // state.hook(WindowEvent {
-                //     kind: Event::Close,
-                //     window_id: data.id(),
-                // });
-                todo!()
+                state.events.push(WindowEvent {
+                    kind: Event::Close,
+                    window_id: data.id(),
+                });
             }
             xdg_toplevel::Event::ConfigureBounds {
                 width: _,

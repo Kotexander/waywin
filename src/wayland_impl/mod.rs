@@ -27,41 +27,39 @@ impl Waywin {
 
         Ok(Self { state, event_loop })
     }
-    pub fn run(&mut self, mut event_hook: impl FnMut(WindowEvent) + 'static) {
+    pub fn run(&mut self, mut event_hook: impl FnMut(WindowEvent, &mut bool) + 'static) {
+        let mut running = true;
+        let signal = self.event_loop.get_signal();
+
         self.event_loop
             .run(None, &mut self.state, |state| {
-                // TODO: maybe check if the window hasn't been droped before sending the events
-                for event in state.events.drain(..) {
-                    event_hook(event);
-                }
-
                 state.windows.retain(|window| {
                     if let Some(window) = window.upgrade() {
-                        let state = window.state.lock().unwrap();
+                        let curr_state = window.state.lock().unwrap();
                         let mut prev_state = window.prev_state.lock().unwrap();
 
-                        let scaled = prev_state.scale != state.scale;
-                        let resized = prev_state.size != state.size;
-                        *prev_state = *state;
+                        let scaled = prev_state.scale != curr_state.scale;
+                        let resized = prev_state.size != curr_state.size;
+                        *prev_state = *curr_state;
 
-                        drop(state);
+                        drop(curr_state);
                         drop(prev_state);
 
                         if scaled {
-                            event_hook(WindowEvent {
+                            state.events.push(WindowEvent {
                                 kind: Event::NewScaleFactor,
                                 window_id: window.id(),
                             });
                         }
                         if resized || scaled {
-                            event_hook(WindowEvent {
+                            state.events.push(WindowEvent {
                                 kind: Event::Resized,
                                 window_id: window.id(),
                             });
                         }
 
                         if window.reset_redraw() || resized || scaled {
-                            event_hook(WindowEvent {
+                            state.events.push(WindowEvent {
                                 kind: Event::Paint,
                                 window_id: window.id(),
                             });
@@ -71,6 +69,15 @@ impl Waywin {
                         false
                     }
                 });
+
+                for event in state.events.drain(..) {
+                    event_hook(event, &mut running);
+                    if !running {
+                        signal.stop();
+                        signal.wakeup();
+                        return;
+                    }
+                }
             })
             .unwrap();
     }
