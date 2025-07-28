@@ -59,6 +59,12 @@ impl Window {
     pub fn set_title(&self, title: &str) {
         self.backend_impl.set_title(title)
     }
+    pub fn set_fullscreen(&self, fullscreen: bool) {
+        self.backend_impl.set_fullscreen(fullscreen)
+    }
+    pub fn get_fullscreen(&self) -> bool {
+        self.backend_impl.get_fullscreen()
+    }
     pub fn id(&self) -> usize {
         self.backend_impl.id()
     }

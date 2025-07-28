@@ -10,6 +10,7 @@ use wayland_protocols::wp::relative_pointer::zv1::client::{
 };
 
 #[derive(Default)]
+// members are released by `WaywinState`
 pub struct PointerState {
     pub pointer: Option<WlPointer>,
     pub relative_pointer: Option<ZwpRelativePointerV1>,
@@ -26,8 +27,6 @@ impl Dispatch<WlPointer, ()> for WaywinState {
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
-        log::debug!("{event:?}");
-
         match event {
             wayland_client::protocol::wl_pointer::Event::Enter {
                 serial: _,

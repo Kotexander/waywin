@@ -57,6 +57,8 @@ pub struct WindowInner {
     surface: WlSurface,
     xdg_surface: XdgSurface,
     toplevel: XdgToplevel,
+    // make sure `XdgWmBase` isn't destroyed while this window is alive
+    _xdg_base: Arc<super::state::XdgWmBaseDropper>,
 
     decoration: Option<ZxdgToplevelDecorationV1>,
     viewport_scaling: Option<(WpViewport, WpFractionalScaleV1)>,
@@ -64,9 +66,10 @@ pub struct WindowInner {
     // qhandle: QueueHandle<WaywinState>,
     // frame: AtomicBool,
     redraw: AtomicBool,
+    fullscreen: AtomicBool,
 
-    pub(crate) state: Mutex<State>,
-    pub(crate) prev_state: Mutex<State>,
+    pub state: Mutex<State>,
+    pub prev_state: Mutex<State>,
     configure: Mutex<PendingConfigure>,
 
     // for HasDisplayHandle
@@ -88,6 +91,7 @@ impl WindowInner {
     // }
     pub fn set_redraw(&self) {
         self.redraw.store(true, Ordering::Relaxed);
+        self.signal.wakeup();
         // self.inner.frame();
     }
     pub fn reset_redraw(&self) -> bool {
@@ -95,7 +99,6 @@ impl WindowInner {
             .redraw
             .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
             .is_ok();
-        self.signal.wakeup();
         ok
     }
 }
@@ -119,42 +122,43 @@ pub struct Window {
 }
 impl Window {
     pub fn new(waywin: &mut Waywin, title: &str) -> Result<Self, String> {
-        let waywin_state = &mut waywin.state;
         // this freeze might not be needed since a window shouldn't be created while the event queue is polled
-        let freeze = waywin_state.qhandle.freeze();
+        let freeze = waywin.state.qhandle.freeze();
         let inner = Arc::new_cyclic(|weak| {
             let surface = {
-                waywin_state
+                waywin
+                    .state
                     .compositor
-                    .create_surface(&waywin_state.qhandle, weak.clone())
+                    .create_surface(&waywin.state.qhandle, weak.clone())
             };
-            let xdg_surface = waywin_state.xdg_wm_base.get_xdg_surface(
+            let xdg_surface = waywin.state.xdg_wm_base.get_xdg_surface(
                 &surface,
-                &waywin_state.qhandle,
+                &waywin.state.qhandle,
                 weak.clone(),
             );
-            let toplevel = xdg_surface.get_toplevel(&waywin_state.qhandle, weak.clone());
+            let toplevel = xdg_surface.get_toplevel(&waywin.state.qhandle, weak.clone());
             toplevel.set_title(title.to_owned());
-            toplevel.set_app_id(waywin_state.app_id.clone());
+            toplevel.set_app_id(waywin.state.app_id.clone());
 
-            let decoration = waywin_state.decoration.as_ref().map(|decoration| {
+            let decoration = waywin.state.decoration.as_ref().map(|decoration| {
                 let decor = decoration.get_toplevel_decoration(
                     &toplevel,
-                    &waywin_state.qhandle,
+                    &waywin.state.qhandle,
                     weak.clone(),
                 );
                 decor.set_mode(Mode::ServerSide);
                 decor
             });
 
-            let viewport_scaling = waywin_state
+            let viewport_scaling = waywin
+                .state
                 .viewporter
                 .as_ref()
-                .zip(waywin_state.scaling.as_ref())
+                .zip(waywin.state.scaling.as_ref())
                 .map(|(viewporter, scaling)| {
                     (
-                        viewporter.get_viewport(&surface, &waywin_state.qhandle, weak.clone()),
-                        scaling.get_fractional_scale(&surface, &waywin_state.qhandle, weak.clone()),
+                        viewporter.get_viewport(&surface, &waywin.state.qhandle, weak.clone()),
+                        scaling.get_fractional_scale(&surface, &waywin.state.qhandle, weak.clone()),
                     )
                 });
 
@@ -166,22 +170,24 @@ impl Window {
             };
             let configure = PendingConfigure::default();
 
-            waywin_state.windows.push(weak.clone());
+            waywin.state.windows.push(weak.clone());
 
             WindowInner {
                 surface,
                 xdg_surface,
                 toplevel,
                 decoration,
-                connection: waywin_state.connection.clone(),
+                connection: waywin.state.connection.clone(),
                 state: Mutex::new(state),
                 prev_state: Mutex::new(state),
                 configure: Mutex::new(configure),
                 // qhandle: waywin.qhandle.clone(),
                 // frame: AtomicBool::new(false),
                 redraw: AtomicBool::new(true),
+                fullscreen: AtomicBool::new(false),
                 viewport_scaling,
                 signal: waywin.event_loop.get_signal(),
+                _xdg_base: waywin.state.xdg_wm_base.clone(),
             }
         });
         drop(freeze);
@@ -205,6 +211,19 @@ impl Window {
     pub fn request_redraw(&self) {
         self.inner.set_redraw();
         // self.inner.frame();
+    }
+    pub fn set_fullscreen(&self, fullscreen: bool) {
+        if fullscreen {
+            self.inner.toplevel.set_fullscreen(None);
+        } else {
+            self.inner.toplevel.unset_fullscreen();
+        }
+        // idk if this is the right ordering
+        self.inner.fullscreen.store(fullscreen, Ordering::Release);
+    }
+    pub fn get_fullscreen(&self) -> bool {
+        // idk if this is the right ordering
+        self.inner.fullscreen.load(Ordering::Acquire)
     }
     pub fn id(&self) -> usize {
         self.inner.id()

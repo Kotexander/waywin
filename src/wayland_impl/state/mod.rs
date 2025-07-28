@@ -2,7 +2,10 @@ use super::window::WindowInner;
 use crate::event::WaywinEvent;
 use keyboard::KeyboardState;
 use pointer::PointerState;
-use std::sync::Weak;
+use std::{
+    ops::Deref,
+    sync::{Arc, Weak},
+};
 use wayland_client::{
     globals::registry_queue_init,
     protocol::{wl_compositor::WlCompositor, wl_seat::WlSeat},
@@ -25,7 +28,7 @@ mod proxy;
 
 pub struct WaywinState {
     pub compositor: WlCompositor,
-    pub xdg_wm_base: XdgWmBase,
+    pub xdg_wm_base: Arc<XdgWmBaseDropper>,
     pub seat: WlSeat,
     pub decoration: Option<ZxdgDecorationManagerV1>,
     pub viewporter: Option<WpViewporter>,
@@ -73,7 +76,7 @@ impl WaywinState {
         Ok((
             Self {
                 compositor,
-                xdg_wm_base,
+                xdg_wm_base: Arc::new(XdgWmBaseDropper(xdg_wm_base)),
                 seat,
                 decoration,
                 viewporter,
@@ -121,6 +124,25 @@ impl Drop for WaywinState {
             s.destroy();
         }
         self.seat.release();
-        self.xdg_wm_base.destroy(); // TODO: don't destroy while windows are up
+
+        // should be destroyed automatically when it can
+        // self.xdg_wm_base.destroy();
+    }
+}
+
+/// Used to make sure `XdgWmBase` is not destroyed while windows are up.
+/// Needs to be referenced counted by something else.
+#[derive(Clone)]
+pub struct XdgWmBaseDropper(XdgWmBase);
+impl Drop for XdgWmBaseDropper {
+    fn drop(&mut self) {
+        self.0.destroy();
+    }
+}
+impl Deref for XdgWmBaseDropper {
+    type Target = XdgWmBase;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }

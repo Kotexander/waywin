@@ -11,7 +11,8 @@ because i wanted to make windowing library
 both windows and wayland are work in progress
 ## todos
 ### general
-- fullscreen
+
+- cursor icons
 ### windows
 - WIP
 ### wayland

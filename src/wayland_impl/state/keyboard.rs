@@ -19,6 +19,7 @@ pub struct RepeatState {
     pub key: xkb::Keycode,
 }
 
+// members are released by `WaywinState`
 pub struct KeyboardState {
     pub keyboard: Option<WlKeyboard>,
     pub repeat_info: Option<RepeatInfo>,
@@ -137,7 +138,6 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
-        log::debug!("{event:?}");
         match event {
             wl_keyboard::Event::Keymap { format, fd, size } => {
                 state.keyboard.xkb_state = None;

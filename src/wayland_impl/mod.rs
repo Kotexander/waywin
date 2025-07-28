@@ -17,13 +17,14 @@ pub struct Waywin {
 }
 impl Waywin {
     pub fn init(instance: &str) -> Result<Self, String> {
-        let event_loop = calloop::EventLoop::try_new().unwrap();
+        let event_loop = calloop::EventLoop::try_new()
+            .map_err(|err| format!("failed to create polling system: {err}"))?;
 
         let (state, event_queue) = WaywinState::new(instance, event_loop.handle())?;
 
         calloop_wayland_source::WaylandSource::new(state.connection.clone(), event_queue)
             .insert(event_loop.handle())
-            .unwrap();
+            .map_err(|err| err.to_string())?;
 
         Ok(Self { state, event_loop })
     }
@@ -80,12 +81,6 @@ impl Waywin {
                 }
             })
             .unwrap();
-    }
-}
-
-impl std::fmt::Debug for Waywin {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Waywin").finish_non_exhaustive()
     }
 }
 

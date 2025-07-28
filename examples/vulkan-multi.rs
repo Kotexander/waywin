@@ -57,7 +57,7 @@ use vulkano::{
     Validated, VulkanError, VulkanLibrary,
 };
 use waywin::{
-    event::{WaywinEvent, WindowEvent},
+    event::{Key, LogicalKey, WaywinEvent, WindowEvent},
     Waywin, Window,
 };
 
@@ -517,6 +517,14 @@ impl App {
                         let dt = now.duration_since(self.rcx.time);
                         log::trace!("FPS: {:.0}", 1.0 / dt.as_secs_f64());
                         self.rcx.time = now;
+                    }
+                    WindowEvent::Key {
+                        down: true,
+                        logical_key: LogicalKey::Key(Key::F11),
+                        ..
+                    } => {
+                        let fullscreen = self.rcx.window.get_fullscreen();
+                        self.rcx.window.set_fullscreen(!fullscreen);
                     }
                     _ => {}
                 }
