@@ -3,8 +3,11 @@ use smol_str::SmolStr;
 mod keyboard;
 pub use keyboard::*;
 
+mod pointer;
+pub use pointer::*;
+
 #[derive(Debug, Clone)]
-pub enum Event {
+pub enum WindowEvent {
     Paint,
     Close,
     Resized,
@@ -20,6 +23,7 @@ pub enum Event {
     },
     PointerEntered,
     PointerLeft,
+    /// In logical pixels.
     PointerMoved(f64, f64),
     PointerButton {
         down: bool,
@@ -28,35 +32,23 @@ pub enum Event {
     Scroll {
         direction: ScrollDirection,
         value: f64,
-    }, // KeyModifiers(KeyModifiers),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum PointerButton {
-    Left,
-    Right,
-    Middle,
-    Forward,
-    Back,
-    Unknown(u32),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ScrollDirection {
-    Vertical,
-    Horizontal,
-}
-impl ScrollDirection {
-    pub fn is_vertical(&self) -> bool {
-        matches!(self, Self::Vertical)
-    }
-    pub fn is_horizontal(&self) -> bool {
-        matches!(self, Self::Horizontal)
-    }
+    },
+    // KeyModifiers(KeyModifiers),
 }
 
 #[derive(Debug, Clone)]
-pub struct WindowEvent {
-    pub kind: Event,
-    pub window_id: usize,
+pub enum DeviceEvent {
+    PointerMoved {
+        delta: (f64, f64),
+        delta_unaccel: (f64, f64),
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum WaywinEvent {
+    WindowEvent {
+        event: WindowEvent,
+        window_id: usize,
+    },
+    DeviceEvent(DeviceEvent),
 }

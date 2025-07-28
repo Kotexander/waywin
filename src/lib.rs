@@ -3,7 +3,7 @@ compile_error!("waywin only supports 64-bit targets");
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 compile_error!("waywin only supports Linux and Windows");
 
-use event::WindowEvent;
+use crate::event::WaywinEvent;
 use raw_window_handle as rwh;
 use std::marker::PhantomData;
 
@@ -35,7 +35,7 @@ impl Waywin {
         backend_impl::Window::new(&mut self.backend_impl, title)
             .map(|backend_impl| Window { backend_impl })
     }
-    pub fn run(mut self, event_hook: impl FnMut(WindowEvent, &mut bool) + 'static) {
+    pub fn run(mut self, event_hook: impl FnMut(WaywinEvent, &mut bool) + 'static) {
         self.backend_impl.run(event_hook)
     }
 }

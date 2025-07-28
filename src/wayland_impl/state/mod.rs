@@ -1,5 +1,5 @@
 use super::window::WindowInner;
-use crate::event::WindowEvent;
+use crate::event::WaywinEvent;
 use keyboard::KeyboardState;
 use pointer::PointerState;
 use std::sync::Weak;
@@ -41,7 +41,7 @@ pub struct WaywinState {
     pub windows: Vec<Weak<WindowInner>>,
     pub handle: calloop::LoopHandle<'static, Self>,
 
-    pub events: Vec<WindowEvent>,
+    pub events: Vec<WaywinEvent>,
 }
 impl WaywinState {
     pub fn new(

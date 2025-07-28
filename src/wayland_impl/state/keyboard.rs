@@ -1,5 +1,5 @@
 use super::WaywinState;
-use crate::event::{Event, Key, KeyCode, LogicalKey, PhysicalKey, WindowEvent};
+use crate::event::{Key, KeyCode, LogicalKey, PhysicalKey, WaywinEvent, WindowEvent};
 use smol_str::SmolStr;
 use std::time::Duration;
 use wayland_client::{
@@ -63,7 +63,7 @@ fn generate_down_event(
     xkb_state: &xkb::State,
     wayland_key: xkb::Keycode,
     key: xkb::Keycode,
-) -> Event {
+) -> WindowEvent {
     let layout = xkb_state.key_get_layout(wayland_key);
     let keysym = xkb_state.key_get_one_sym(wayland_key);
     let unmodified_keysym = xkb_state
@@ -80,7 +80,7 @@ fn generate_down_event(
     };
     let text_raw = xkb_state_key_get_utf8_smol(xkb_state, wayland_key);
 
-    Event::Key {
+    WindowEvent::Key {
         down: true,
         physical_key,
         text,
@@ -94,7 +94,7 @@ fn generate_up_event(
     xkb_state: &xkb::State,
     wayland_key: xkb::Keycode,
     key: xkb::Keycode,
-) -> Event {
+) -> WindowEvent {
     let layout = xkb_state.key_get_layout(wayland_key);
     let keysym = xkb_state.key_get_one_sym(wayland_key);
     let unmodified_keysym = xkb_state
@@ -105,7 +105,7 @@ fn generate_up_event(
     let logical_key = LogicalKey::from(keysym);
     let logical_key_unmodified = LogicalKey::from(unmodified_keysym);
 
-    Event::Key {
+    WindowEvent::Key {
         down: false,
         physical_key,
         text: SmolStr::new_static(""),
@@ -167,8 +167,8 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                 // unfocus old window if it wasn't already
                 if let Some(focused_window) = state.keyboard.focused_window {
                     log::warn!("focusing new window before unfocusing previous window");
-                    state.events.push(WindowEvent {
-                        kind: Event::Focus(false),
+                    state.events.push(WaywinEvent::WindowEvent {
+                        event: WindowEvent::Focus(false),
                         window_id: focused_window,
                     });
                 }
@@ -176,8 +176,8 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                 // focus new window
                 let id = surface.id().as_ptr() as usize;
                 state.keyboard.focused_window = Some(id);
-                state.events.push(WindowEvent {
-                    kind: Event::Focus(true),
+                state.events.push(WaywinEvent::WindowEvent {
+                    event: WindowEvent::Focus(true),
                     window_id: id,
                 });
             }
@@ -190,8 +190,8 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                     log::warn!("unfocusing an unfocused window: {id}");
                 } else {
                     state.keyboard.focused_window = None;
-                    state.events.push(WindowEvent {
-                        kind: Event::Focus(false),
+                    state.events.push(WaywinEvent::WindowEvent {
+                        event: WindowEvent::Focus(false),
                         window_id: id,
                     });
                 }
@@ -215,10 +215,10 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                 };
 
                 if let Some(xkb_state) = &state.keyboard.xkb_state {
-                    let kind = generate_down_event(xkb_state, wayland_key, key);
+                    let event = generate_down_event(xkb_state, wayland_key, key);
 
-                    state.events.push(WindowEvent {
-                        kind: kind.clone(),
+                    state.events.push(WaywinEvent::WindowEvent {
+                        event: event.clone(),
                         window_id: id,
                     });
 
@@ -236,8 +236,8 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                                     };
 
                                     if let Some(repeat_info) = state.keyboard.repeat_info {
-                                        state.events.push(WindowEvent {
-                                            kind: kind.clone(),
+                                        state.events.push(WaywinEvent::WindowEvent {
+                                            event: event.clone(),
                                             window_id: id,
                                         });
 
@@ -280,8 +280,8 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                 if let Some(xkb_state) = &state.keyboard.xkb_state {
                     let kind = generate_up_event(xkb_state, wayland_key, key);
 
-                    state.events.push(WindowEvent {
-                        kind: kind.clone(),
+                    state.events.push(WaywinEvent::WindowEvent {
+                        event: kind.clone(),
                         window_id: id,
                     });
                 }

@@ -1,5 +1,5 @@
 use crate::{
-    event::{Event, WindowEvent},
+    event::{WaywinEvent, WindowEvent},
     wayland_impl::state::WaywinState,
 };
 use raw_window_handle as rwh;
@@ -27,7 +27,7 @@ impl Waywin {
 
         Ok(Self { state, event_loop })
     }
-    pub fn run(&mut self, mut event_hook: impl FnMut(WindowEvent, &mut bool) + 'static) {
+    pub fn run(&mut self, mut event_hook: impl FnMut(WaywinEvent, &mut bool) + 'static) {
         let mut running = true;
         let signal = self.event_loop.get_signal();
 
@@ -46,21 +46,21 @@ impl Waywin {
                         drop(prev_state);
 
                         if scaled {
-                            state.events.push(WindowEvent {
-                                kind: Event::NewScaleFactor,
+                            state.events.push(WaywinEvent::WindowEvent {
+                                event: WindowEvent::NewScaleFactor,
                                 window_id: window.id(),
                             });
                         }
                         if resized || scaled {
-                            state.events.push(WindowEvent {
-                                kind: Event::Resized,
+                            state.events.push(WaywinEvent::WindowEvent {
+                                event: WindowEvent::Resized,
                                 window_id: window.id(),
                             });
                         }
 
                         if window.reset_redraw() || resized || scaled {
-                            state.events.push(WindowEvent {
-                                kind: Event::Paint,
+                            state.events.push(WaywinEvent::WindowEvent {
+                                event: WindowEvent::Paint,
                                 window_id: window.id(),
                             });
                         }

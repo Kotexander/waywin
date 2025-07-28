@@ -1,6 +1,5 @@
-use crate::event::{Event, WindowEvent};
-
 use super::{Waywin, WaywinState};
+use crate::event::{WaywinEvent, WindowEvent};
 use raw_window_handle as rwh;
 use std::{
     ptr::NonNull,
@@ -338,8 +337,8 @@ impl Dispatch<XdgToplevel, Weak<WindowInner>> for WaywinState {
                 }
             }
             xdg_toplevel::Event::Close => {
-                state.events.push(WindowEvent {
-                    kind: Event::Close,
+                state.events.push(WaywinEvent::WindowEvent {
+                    event: WindowEvent::Close,
                     window_id: data.id(),
                 });
             }

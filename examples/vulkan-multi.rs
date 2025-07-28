@@ -57,7 +57,7 @@ use vulkano::{
     Validated, VulkanError, VulkanLibrary,
 };
 use waywin::{
-    event::{Event, WindowEvent},
+    event::{WaywinEvent, WindowEvent},
     Waywin, Window,
 };
 
@@ -74,17 +74,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let window2 = Arc::new(waywin.create_window("Vulkan window 2")?);
     let mut app2 = App::new(vk_ctx, window2);
 
-    waywin.run(move |window_event, running| {
-        if !matches!(window_event.kind, Event::Paint) {
-            println!("{window_event:#?}");
+    waywin.run(move |event, running| {
+        if !matches!(
+            event,
+            WaywinEvent::WindowEvent {
+                event: WindowEvent::Paint,
+                ..
+            }
+        ) {
+            println!("{event:#?}");
         }
 
-        if app.rcx.window.id() == window_event.window_id {
-            app.window_event(&window_event, running);
-        }
-        if app2.rcx.window.id() == window_event.window_id {
-            app2.window_event(&window_event, running);
-        }
+        app.event(&event, running);
+        app2.event(&event, running);
     });
 
     Ok(())
@@ -388,137 +390,138 @@ impl App {
             rcx,
         }
     }
-}
+    fn event(&mut self, event: &WaywinEvent, running: &mut bool) {
+        match event {
+            WaywinEvent::WindowEvent { event, window_id } if *window_id == self.rcx.window.id() => {
+                match event {
+                    WindowEvent::Close => {
+                        *running = false;
+                    }
+                    WindowEvent::Resized => {
+                        self.rcx.recreate_swapchain = true;
+                    }
+                    WindowEvent::Paint => {
+                        let window_size = self.rcx.window.get_physical_size();
 
-impl App {
-    fn window_event(&mut self, event: &WindowEvent, running: &mut bool) {
-        match event.kind {
-            Event::Close => {
-                *running = false;
-            }
-            Event::Resized => {
-                self.rcx.recreate_swapchain = true;
-            }
-            Event::Paint => {
-                let window_size = self.rcx.window.get_physical_size();
-
-                if window_size.0 == 0 || window_size.1 == 0 {
-                    return;
-                }
-
-                if self.rcx.recreate_swapchain {
-                    let (new_swapchain, new_images) = self
-                        .rcx
-                        .swapchain
-                        .recreate(SwapchainCreateInfo {
-                            image_extent: window_size.into(),
-                            ..self.rcx.swapchain.create_info()
-                        })
-                        .expect("failed to recreate swapchain");
-
-                    self.rcx.swapchain = new_swapchain;
-
-                    self.rcx.framebuffers =
-                        window_size_dependent_setup(&new_images, &self.rcx.render_pass);
-
-                    self.rcx.viewport.extent = [window_size.0 as f32, window_size.1 as f32];
-
-                    self.rcx.recreate_swapchain = false;
-                }
-
-                let (image_index, suboptimal, acquire_future) =
-                    match acquire_next_image(self.rcx.swapchain.clone(), None)
-                        .map_err(Validated::unwrap)
-                    {
-                        Ok(r) => r,
-                        Err(VulkanError::OutOfDate) => {
-                            log::error!("OUT OF DATE");
-                            self.rcx.recreate_swapchain = true;
+                        if window_size.0 == 0 || window_size.1 == 0 {
                             return;
                         }
-                        Err(e) => panic!("failed to acquire next image: {e}"),
-                    };
 
-                if suboptimal {
-                    log::error!("SUBOPTIMAL");
-                    self.rcx.recreate_swapchain = true;
-                }
+                        if self.rcx.recreate_swapchain {
+                            let (new_swapchain, new_images) = self
+                                .rcx
+                                .swapchain
+                                .recreate(SwapchainCreateInfo {
+                                    image_extent: window_size.into(),
+                                    ..self.rcx.swapchain.create_info()
+                                })
+                                .expect("failed to recreate swapchain");
 
-                let mut builder = AutoCommandBufferBuilder::primary(
-                    self.vk_ctx.cmd_alloc.clone(),
-                    self.vk_ctx.queue.queue_family_index(),
-                    CommandBufferUsage::OneTimeSubmit,
-                )
-                .unwrap();
+                            self.rcx.swapchain = new_swapchain;
 
-                builder
-                    .begin_render_pass(
-                        RenderPassBeginInfo {
-                            clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
+                            self.rcx.framebuffers =
+                                window_size_dependent_setup(&new_images, &self.rcx.render_pass);
 
-                            ..RenderPassBeginInfo::framebuffer(
-                                self.rcx.framebuffers[image_index as usize].clone(),
+                            self.rcx.viewport.extent = [window_size.0 as f32, window_size.1 as f32];
+
+                            self.rcx.recreate_swapchain = false;
+                        }
+
+                        let (image_index, suboptimal, acquire_future) =
+                            match acquire_next_image(self.rcx.swapchain.clone(), None)
+                                .map_err(Validated::unwrap)
+                            {
+                                Ok(r) => r,
+                                Err(VulkanError::OutOfDate) => {
+                                    self.rcx.recreate_swapchain = true;
+                                    return;
+                                }
+                                Err(e) => panic!("failed to acquire next image: {e}"),
+                            };
+
+                        if suboptimal {
+                            self.rcx.recreate_swapchain = true;
+                        }
+
+                        let mut builder = AutoCommandBufferBuilder::primary(
+                            self.vk_ctx.cmd_alloc.clone(),
+                            self.vk_ctx.queue.queue_family_index(),
+                            CommandBufferUsage::OneTimeSubmit,
+                        )
+                        .unwrap();
+
+                        builder
+                            .begin_render_pass(
+                                RenderPassBeginInfo {
+                                    clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
+
+                                    ..RenderPassBeginInfo::framebuffer(
+                                        self.rcx.framebuffers[image_index as usize].clone(),
+                                    )
+                                },
+                                SubpassBeginInfo {
+                                    contents: SubpassContents::Inline,
+                                    ..Default::default()
+                                },
                             )
-                        },
-                        SubpassBeginInfo {
-                            contents: SubpassContents::Inline,
-                            ..Default::default()
-                        },
-                    )
-                    .unwrap()
-                    .set_viewport(0, [self.rcx.viewport.clone()].into_iter().collect())
-                    .unwrap()
-                    .bind_pipeline_graphics(self.rcx.pipeline.clone())
-                    .unwrap()
-                    .bind_vertex_buffers(0, self.vertex_buffer.clone())
-                    .unwrap();
+                            .unwrap()
+                            .set_viewport(0, [self.rcx.viewport.clone()].into_iter().collect())
+                            .unwrap()
+                            .bind_pipeline_graphics(self.rcx.pipeline.clone())
+                            .unwrap()
+                            .bind_vertex_buffers(0, self.vertex_buffer.clone())
+                            .unwrap();
 
-                unsafe { builder.draw(self.vertex_buffer.len() as u32, 1, 0, 0) }.unwrap();
+                        unsafe { builder.draw(self.vertex_buffer.len() as u32, 1, 0, 0) }.unwrap();
 
-                builder.end_render_pass(Default::default()).unwrap();
+                        builder.end_render_pass(Default::default()).unwrap();
 
-                let command_buffer = builder.build().unwrap();
+                        let command_buffer = builder.build().unwrap();
 
-                let future = self
-                    .rcx
-                    .previous_frame_end
-                    .take()
-                    .unwrap()
-                    .join(acquire_future)
-                    .then_execute(self.vk_ctx.queue.clone(), command_buffer)
-                    .unwrap()
-                    .then_swapchain_present(
-                        self.vk_ctx.queue.clone(),
-                        SwapchainPresentInfo::swapchain_image_index(
-                            self.rcx.swapchain.clone(),
-                            image_index,
-                        ),
-                    )
-                    .then_signal_fence_and_flush();
+                        let future = self
+                            .rcx
+                            .previous_frame_end
+                            .take()
+                            .unwrap()
+                            .join(acquire_future)
+                            .then_execute(self.vk_ctx.queue.clone(), command_buffer)
+                            .unwrap()
+                            .then_swapchain_present(
+                                self.vk_ctx.queue.clone(),
+                                SwapchainPresentInfo::swapchain_image_index(
+                                    self.rcx.swapchain.clone(),
+                                    image_index,
+                                ),
+                            )
+                            .then_signal_fence_and_flush();
 
-                match future.map_err(Validated::unwrap) {
-                    Ok(future) => {
-                        // future.cleanup_finished();
-                        future.wait(None).unwrap();
-                        self.rcx.previous_frame_end = Some(future.boxed());
+                        match future.map_err(Validated::unwrap) {
+                            Ok(future) => {
+                                // future.cleanup_finished();
+                                future.wait(None).unwrap();
+                                self.rcx.previous_frame_end = Some(future.boxed());
+                            }
+                            Err(VulkanError::OutOfDate) => {
+                                self.rcx.recreate_swapchain = true;
+                                self.rcx.previous_frame_end =
+                                    Some(sync::now(self.vk_ctx.device.clone()).boxed());
+                            }
+                            Err(e) => {
+                                panic!("failed to flush future: {e}");
+                            }
+                        }
+
+                        self.rcx.window.request_redraw();
+
+                        let now = std::time::Instant::now();
+                        let dt = now.duration_since(self.rcx.time);
+                        log::trace!("FPS: {:.0}", 1.0 / dt.as_secs_f64());
+                        self.rcx.time = now;
                     }
-                    Err(VulkanError::OutOfDate) => {
-                        self.rcx.recreate_swapchain = true;
-                        self.rcx.previous_frame_end =
-                            Some(sync::now(self.vk_ctx.device.clone()).boxed());
-                    }
-                    Err(e) => {
-                        panic!("failed to flush future: {e}");
-                    }
+                    _ => {}
                 }
-
-                self.rcx.window.request_redraw();
-
-                let now = std::time::Instant::now();
-                let dt = now.duration_since(self.rcx.time);
-                log::trace!("FPS: {:.0}", 1.0 / dt.as_secs_f64());
-                self.rcx.time = now;
             }
+            WaywinEvent::DeviceEvent(_) => {}
             _ => {}
         }
     }
