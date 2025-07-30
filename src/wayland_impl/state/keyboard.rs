@@ -28,6 +28,13 @@ pub struct KeyboardState {
     pub xkb_context: xkb::Context,
     pub xkb_state: Option<xkb::State>,
 }
+impl Drop for KeyboardState {
+    fn drop(&mut self) {
+        if let Some(s) = self.keyboard.take() {
+            s.release()
+        }
+    }
+}
 
 fn keysym_to_utf8_smol(keysym: xkb::Keysym) -> SmolStr {
     use std::ffi::*;
@@ -140,11 +147,11 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
     ) {
         match event {
             wl_keyboard::Event::Keymap { format, fd, size } => {
-                state.keyboard.xkb_state = None;
+                state.keyboard_state.xkb_state = None;
                 if let WEnum::Value(KeymapFormat::XkbV1) = format {
                     let keymap = unsafe {
                         xkb::Keymap::new_from_fd(
-                            &state.keyboard.xkb_context,
+                            &state.keyboard_state.xkb_context,
                             fd,
                             size as usize,
                             xkb::KEYMAP_FORMAT_TEXT_V1,
@@ -154,7 +161,7 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                         .unwrap()
                     };
                     let xkb_state = xkb::State::new(&keymap);
-                    state.keyboard.xkb_state = Some(xkb_state);
+                    state.keyboard_state.xkb_state = Some(xkb_state);
                 } else {
                     log::warn!("unkown keymap")
                 }
@@ -165,7 +172,7 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                 keys: _, // TODO
             } => {
                 // unfocus old window if it wasn't already
-                if let Some(focused_window) = state.keyboard.focused_window {
+                if let Some(focused_window) = state.keyboard_state.focused_window {
                     log::warn!("focusing new window before unfocusing previous window");
                     state.events.push(WaywinEvent::WindowEvent {
                         event: WindowEvent::Focus(false),
@@ -175,21 +182,21 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
 
                 // focus new window
                 let id = surface.id().as_ptr() as usize;
-                state.keyboard.focused_window = Some(id);
+                state.keyboard_state.focused_window = Some(id);
                 state.events.push(WaywinEvent::WindowEvent {
                     event: WindowEvent::Focus(true),
                     window_id: id,
                 });
             }
             wl_keyboard::Event::Leave { serial: _, surface } => {
-                if let Some(token) = state.keyboard.repeat_state.take() {
+                if let Some(token) = state.keyboard_state.repeat_state.take() {
                     state.handle.remove(token.token);
                 }
                 let id = surface.id().as_ptr() as usize;
-                if Some(id) != state.keyboard.focused_window {
+                if Some(id) != state.keyboard_state.focused_window {
                     log::warn!("unfocusing an unfocused window: {id}");
                 } else {
-                    state.keyboard.focused_window = None;
+                    state.keyboard_state.focused_window = None;
                     state.events.push(WaywinEvent::WindowEvent {
                         event: WindowEvent::Focus(false),
                         window_id: id,
@@ -205,16 +212,16 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                 let wayland_key = xkb::Keycode::new(key + 8);
                 let key = xkb::Keycode::new(key);
 
-                if let Some(token) = state.keyboard.repeat_state.take() {
+                if let Some(token) = state.keyboard_state.repeat_state.take() {
                     state.handle.remove(token.token);
                 }
 
-                let Some(id) = state.keyboard.focused_window else {
+                let Some(id) = state.keyboard_state.focused_window else {
                     log::warn!("recieved a key down event while no window is focused");
                     return;
                 };
 
-                if let Some(xkb_state) = &state.keyboard.xkb_state {
+                if let Some(xkb_state) = &state.keyboard_state.xkb_state {
                     let event = generate_down_event(xkb_state, wayland_key, key);
 
                     state.events.push(WaywinEvent::WindowEvent {
@@ -223,19 +230,19 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                     });
 
                     if xkb_state.get_keymap().key_repeats(wayland_key) {
-                        if let Some(repeat_info) = &state.keyboard.repeat_info {
+                        if let Some(repeat_info) = &state.keyboard_state.repeat_info {
                             let timer = calloop::timer::Timer::from_duration(repeat_info.delay);
                             let token = state
                                 .handle
                                 .insert_source(timer, move |_, _, state| {
-                                    let Some(id) = state.keyboard.focused_window else {
+                                    let Some(id) = state.keyboard_state.focused_window else {
                                         log::warn!(
                                             "tried a key repeat event while no window is focused"
                                         );
                                         return calloop::timer::TimeoutAction::Drop;
                                     };
 
-                                    if let Some(repeat_info) = state.keyboard.repeat_info {
+                                    if let Some(repeat_info) = state.keyboard_state.repeat_info {
                                         state.events.push(WaywinEvent::WindowEvent {
                                             event: event.clone(),
                                             window_id: id,
@@ -249,7 +256,7 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                                     }
                                 })
                                 .unwrap();
-                            state.keyboard.repeat_state = Some(RepeatState { token, key });
+                            state.keyboard_state.repeat_state = Some(RepeatState { token, key });
                         }
                     }
                 }
@@ -263,21 +270,21 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                 let wayland_key = xkb::Keycode::new(key + 8);
                 let key = xkb::Keycode::new(key);
 
-                let Some(id) = state.keyboard.focused_window else {
+                let Some(id) = state.keyboard_state.focused_window else {
                     log::warn!("recieved a key up event while no window is focused");
                     return;
                 };
 
                 // remove repeat callback if keycode is the same
                 if let Some(repeat_state) = state
-                    .keyboard
+                    .keyboard_state
                     .repeat_state
                     .take_if(|token| token.key == key)
                 {
                     state.handle.remove(repeat_state.token);
                 }
 
-                if let Some(xkb_state) = &state.keyboard.xkb_state {
+                if let Some(xkb_state) = &state.keyboard_state.xkb_state {
                     let kind = generate_up_event(xkb_state, wayland_key, key);
 
                     state.events.push(WaywinEvent::WindowEvent {
@@ -301,7 +308,7 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
                 mods_locked,
                 group,
             } => {
-                if let Some(xkb_state) = &mut state.keyboard.xkb_state {
+                if let Some(xkb_state) = &mut state.keyboard_state.xkb_state {
                     xkb_state.update_mask(mods_depressed, mods_latched, mods_locked, 0, 0, group);
 
                     // let Some(id) = state.keyboard.focused_window else {
@@ -337,12 +344,12 @@ impl Dispatch<WlKeyboard, ()> for WaywinState {
             }
             wl_keyboard::Event::RepeatInfo { rate, delay } => {
                 if rate == 0 {
-                    state.keyboard.repeat_info = None;
-                    if let Some(repeat_state) = state.keyboard.repeat_state.take() {
+                    state.keyboard_state.repeat_info = None;
+                    if let Some(repeat_state) = state.keyboard_state.repeat_state.take() {
                         state.handle.remove(repeat_state.token);
                     }
                 } else {
-                    state.keyboard.repeat_info = Some(RepeatInfo {
+                    state.keyboard_state.repeat_info = Some(RepeatInfo {
                         delay: Duration::from_millis(delay as u64),
                         repeat: Duration::from_millis(1000 / rate as u64),
                     });

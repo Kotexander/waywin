@@ -506,6 +506,27 @@ impl App {
                         let fullscreen = self.rcx.window.get_fullscreen();
                         self.rcx.window.set_fullscreen(!fullscreen);
                     }
+                    WindowEvent::Key {
+                        down: true,
+                        logical_key_unmodified,
+                        ..
+                    } => match logical_key_unmodified.as_ref() {
+                        LogicalKey::Character("l") => {
+                            if self.rcx.window.is_pointer_locked() {
+                                self.rcx.window.unlock_pointer();
+                            } else {
+                                self.rcx.window.lock_pointer();
+                            }
+                        }
+                        LogicalKey::Character("c") => {
+                            if self.rcx.window.is_pointer_confined() {
+                                self.rcx.window.unconfine_pointer();
+                            } else {
+                                self.rcx.window.confine_pointer();
+                            }
+                        }
+                        _ => {}
+                    },
                     _ => {}
                 }
             }

@@ -1,4 +1,4 @@
-use super::{Waywin, WaywinState};
+use super::{state::pointer::PointerState, Waywin, WaywinState};
 use crate::event::{WaywinEvent, WindowEvent};
 use raw_window_handle as rwh;
 use std::{
@@ -16,6 +16,10 @@ use wayland_client::{
 use wayland_protocols::{
     wp::{
         fractional_scale::v1::client::wp_fractional_scale_v1::{self, WpFractionalScaleV1},
+        pointer_constraints::zv1::client::{
+            zwp_confined_pointer_v1::ZwpConfinedPointerV1,
+            zwp_locked_pointer_v1::ZwpLockedPointerV1, zwp_pointer_constraints_v1::Lifetime,
+        },
         viewporter::client::wp_viewport::WpViewport,
     },
     xdg::{
@@ -68,6 +72,9 @@ pub struct WindowState {
 
     redraw: bool,
 
+    locked_pointer: Option<ZwpLockedPointerV1>,
+    confined_pointer: Option<ZwpConfinedPointerV1>,
+
     viewport_scaling: Option<(WpViewport, WpFractionalScaleV1)>,
     decoration: Option<ZxdgToplevelDecorationV1>,
 }
@@ -79,6 +86,16 @@ impl WindowState {
     }
     pub fn id(&self) -> usize {
         self.surface.id().as_ptr() as usize
+    }
+    pub fn unlock_pointer(&mut self) {
+        if let Some(locked_pointer) = self.locked_pointer.take() {
+            locked_pointer.destroy();
+        }
+    }
+    pub fn unconfine_pointer(&mut self) {
+        if let Some(confined_pointer) = self.confined_pointer.take() {
+            confined_pointer.destroy();
+        }
     }
 }
 impl Drop for WindowState {
@@ -100,6 +117,10 @@ pub struct Window {
     state: Arc<Mutex<WindowState>>,
 
     signal: calloop::LoopSignal,
+
+    pointer_state: Arc<Mutex<PointerState>>,
+
+    qhandle: QueueHandle<WaywinState>,
 
     // for HasDisplayHandle
     connection: Connection,
@@ -127,11 +148,8 @@ impl Window {
             toplevel.set_app_id(waywin.state.app_id.clone());
 
             let decoration = waywin.state.decoration.as_ref().map(|decoration| {
-                let decor = decoration.get_toplevel_decoration(
-                    &toplevel,
-                    &waywin.state.qhandle,
-                    weak.clone(),
-                );
+                let decor =
+                    decoration.get_toplevel_decoration(&toplevel, &waywin.state.qhandle, ());
                 decor.set_mode(Mode::ServerSide);
                 decor
             });
@@ -163,6 +181,8 @@ impl Window {
                 configure: PendingConfigure { size: None },
                 redraw: true,
                 fullscreen: false,
+                locked_pointer: None,
+                confined_pointer: None,
                 viewport_scaling,
                 decoration,
             })
@@ -179,6 +199,8 @@ impl Window {
         Ok(Self {
             surface,
             state,
+            qhandle: waywin.state.qhandle.clone(),
+            pointer_state: waywin.state.pointer_state.clone(),
             connection: waywin.state.connection.clone(),
             signal: waywin.event_loop.get_signal(),
         })
@@ -217,6 +239,63 @@ impl Window {
     pub fn get_fullscreen(&self) -> bool {
         self.state.lock().unwrap().fullscreen
     }
+
+    pub fn lock_pointer(&self) {
+        let pointer_state = self.pointer_state.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
+        if let Some((pointer_constraints, pointer)) = pointer_state
+            .pointer_constraints
+            .as_ref()
+            .zip(pointer_state.pointer.as_ref())
+        {
+            state.unlock_pointer();
+            state.unconfine_pointer();
+            let locked_pointer = pointer_constraints.lock_pointer(
+                &self.surface,
+                pointer,
+                None,
+                Lifetime::Persistent,
+                &self.qhandle,
+                (),
+            );
+            state.locked_pointer = Some(locked_pointer);
+        }
+    }
+    pub fn unlock_pointer(&self) {
+        self.state.lock().unwrap().unlock_pointer();
+    }
+    pub fn is_pointer_locked(&self) -> bool {
+        self.state.lock().unwrap().locked_pointer.is_some()
+    }
+
+    pub fn confine_pointer(&self) {
+        let pointer_state = self.pointer_state.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
+        if let Some((pointer_constraints, pointer)) = pointer_state
+            .pointer_constraints
+            .as_ref()
+            .zip(pointer_state.pointer.as_ref())
+        {
+            state.unconfine_pointer();
+            state.unlock_pointer();
+            let confined_pointer = pointer_constraints.confine_pointer(
+                &self.surface,
+                pointer,
+                None,
+                Lifetime::Persistent,
+                &self.qhandle,
+                (),
+            );
+            state.confined_pointer = Some(confined_pointer);
+        }
+    }
+    pub fn unconfine_pointer(&self) {
+        self.state.lock().unwrap().unconfine_pointer();
+    }
+    pub fn is_pointer_confined(&self) -> bool {
+        self.state.lock().unwrap().confined_pointer.is_some()
+    }
+
     pub fn id(&self) -> usize {
         self.surface.id().as_ptr() as usize
     }
@@ -237,7 +316,10 @@ impl rwh::HasDisplayHandle for Window {
     }
 }
 
-delegate_noop!(WaywinState:WpViewport);
+delegate_noop!(WaywinState: WpViewport);
+delegate_noop!(WaywinState: ignore ZxdgToplevelDecorationV1);
+delegate_noop!(WaywinState: ignore ZwpLockedPointerV1);
+delegate_noop!(WaywinState: ignore ZwpConfinedPointerV1);
 
 impl Dispatch<WlSurface, Weak<Mutex<WindowState>>> for WaywinState {
     fn event(
@@ -370,19 +452,6 @@ impl Dispatch<XdgToplevel, Weak<Mutex<WindowState>>> for WaywinState {
         }
     }
 }
-impl Dispatch<ZxdgToplevelDecorationV1, Weak<Mutex<WindowState>>> for WaywinState {
-    fn event(
-        _state: &mut Self,
-        _proxy: &ZxdgToplevelDecorationV1,
-        _event: <ZxdgToplevelDecorationV1 as Proxy>::Event,
-        _data: &Weak<Mutex<WindowState>>,
-        _conn: &Connection,
-        _qhandle: &QueueHandle<Self>,
-    ) {
-        // TODO
-    }
-}
-
 impl Dispatch<WpFractionalScaleV1, Weak<Mutex<WindowState>>> for WaywinState {
     fn event(
         _state: &mut Self,

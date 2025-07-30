@@ -65,6 +65,24 @@ impl Window {
     pub fn get_fullscreen(&self) -> bool {
         self.backend_impl.get_fullscreen()
     }
+    pub fn lock_pointer(&self) {
+        self.backend_impl.lock_pointer()
+    }
+    pub fn unlock_pointer(&self) {
+        self.backend_impl.unlock_pointer()
+    }
+    pub fn is_pointer_locked(&self) -> bool {
+        self.backend_impl.is_pointer_locked()
+    }
+    pub fn confine_pointer(&self) {
+        self.backend_impl.confine_pointer()
+    }
+    pub fn unconfine_pointer(&self) {
+        self.backend_impl.unconfine_pointer()
+    }
+    pub fn is_pointer_confined(&self) -> bool {
+        self.backend_impl.is_pointer_confined()
+    }
     pub fn id(&self) -> usize {
         self.backend_impl.id()
     }

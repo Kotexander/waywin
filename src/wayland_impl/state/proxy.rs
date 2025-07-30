@@ -12,6 +12,7 @@ use wayland_client::{
 use wayland_protocols::{
     wp::{
         fractional_scale::v1::client::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
+        pointer_constraints::zv1::client::zwp_pointer_constraints_v1::ZwpPointerConstraintsV1,
         relative_pointer::zv1::client::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
         viewporter::client::wp_viewporter::WpViewporter,
     },
@@ -59,31 +60,32 @@ impl Dispatch<WlSeat, ()> for WaywinState {
         _conn: &Connection,
         qhandle: &QueueHandle<Self>,
     ) {
+        let mut pointer_state = state.pointer_state.lock().unwrap();
+
         match event {
             wl_seat::Event::Capabilities { capabilities } => {
-                if let Some(s) = state.pointer.pointer.take() {
+                if let Some(s) = pointer_state.pointer.take() {
                     s.release();
                 }
-                if let Some(s) = state.keyboard.keyboard.take() {
-                    s.release();
-                }
-                if let Some(s) = state.pointer.relative_pointer.take() {
+                if let Some(s) = pointer_state.relative_pointer.take() {
                     s.destroy();
+                }
+                if let Some(s) = state.keyboard_state.keyboard.take() {
+                    s.release();
                 }
                 if let WEnum::Value(cap) = capabilities {
                     if cap.intersects(Capability::Pointer) {
-                        state.pointer.pointer = Some(proxy.get_pointer(qhandle, ()));
-                        state.pointer.relative_pointer = state
-                            .pointer
+                        pointer_state.pointer = Some(proxy.get_pointer(qhandle, ()));
+                        pointer_state.relative_pointer = pointer_state
                             .pointer
                             .as_ref()
-                            .zip(state.pointer.relative_pointer_manager.as_ref())
+                            .zip(pointer_state.relative_pointer_manager.as_ref())
                             .map(|(pointer, manager)| {
                                 manager.get_relative_pointer(pointer, qhandle, ())
                             });
                     }
                     if cap.intersects(Capability::Keyboard) {
-                        state.keyboard.keyboard = Some(proxy.get_keyboard(qhandle, ()));
+                        state.keyboard_state.keyboard = Some(proxy.get_keyboard(qhandle, ()));
                     }
                 }
             }
@@ -100,3 +102,4 @@ delegate_noop!(WaywinState: ZxdgDecorationManagerV1);
 delegate_noop!(WaywinState: WpViewporter);
 delegate_noop!(WaywinState: WpFractionalScaleManagerV1);
 delegate_noop!(WaywinState: ZwpRelativePointerManagerV1);
+delegate_noop!(WaywinState: ZwpPointerConstraintsV1);

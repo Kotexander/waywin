@@ -4,18 +4,37 @@ use wayland_client::{
     protocol::wl_pointer::{Axis, ButtonState, WlPointer},
     Connection, Dispatch, Proxy, QueueHandle, WEnum,
 };
-use wayland_protocols::wp::relative_pointer::zv1::client::{
-    zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
-    zwp_relative_pointer_v1::{self, ZwpRelativePointerV1},
+use wayland_protocols::wp::{
+    pointer_constraints::zv1::client::zwp_pointer_constraints_v1::ZwpPointerConstraintsV1,
+    relative_pointer::zv1::client::{
+        zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
+        zwp_relative_pointer_v1::{self, ZwpRelativePointerV1},
+    },
 };
 
 #[derive(Default)]
-// members are released by `WaywinState`
 pub struct PointerState {
     pub pointer: Option<WlPointer>,
     pub relative_pointer: Option<ZwpRelativePointerV1>,
     pub relative_pointer_manager: Option<ZwpRelativePointerManagerV1>,
+    pub pointer_constraints: Option<ZwpPointerConstraintsV1>,
     pub focused_window: Option<usize>,
+}
+impl Drop for PointerState {
+    fn drop(&mut self) {
+        if let Some(s) = self.pointer.take() {
+            s.release()
+        }
+        if let Some(s) = self.relative_pointer.take() {
+            s.destroy()
+        }
+        if let Some(s) = self.relative_pointer_manager.take() {
+            s.destroy()
+        }
+        if let Some(s) = self.pointer_constraints.take() {
+            s.destroy()
+        }
+    }
 }
 
 impl Dispatch<WlPointer, ()> for WaywinState {
@@ -27,6 +46,7 @@ impl Dispatch<WlPointer, ()> for WaywinState {
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
+        let mut pointer_state = state.pointer_state.lock().unwrap();
         match event {
             wayland_client::protocol::wl_pointer::Event::Enter {
                 serial: _,
@@ -34,7 +54,7 @@ impl Dispatch<WlPointer, ()> for WaywinState {
                 surface_x,
                 surface_y,
             } => {
-                if let Some(id) = state.pointer.focused_window.take() {
+                if let Some(id) = pointer_state.focused_window.take() {
                     log::warn!("pointer entered new window before leaving old window");
                     state.events.push(WaywinEvent::WindowEvent {
                         event: WindowEvent::PointerLeft,
@@ -42,7 +62,7 @@ impl Dispatch<WlPointer, ()> for WaywinState {
                     });
                 }
                 let id = surface.id().as_ptr() as usize;
-                state.pointer.focused_window = Some(id);
+                pointer_state.focused_window = Some(id);
                 state.events.push(WaywinEvent::WindowEvent {
                     event: WindowEvent::PointerEntered,
                     window_id: id,
@@ -54,10 +74,10 @@ impl Dispatch<WlPointer, ()> for WaywinState {
             }
             wayland_client::protocol::wl_pointer::Event::Leave { serial: _, surface } => {
                 let id = surface.id().as_ptr() as usize;
-                if Some(id) != state.pointer.focused_window {
+                if Some(id) != pointer_state.focused_window {
                     log::warn!("pointer leaving unfocused window: {id}");
                 } else {
-                    state.pointer.focused_window = None;
+                    pointer_state.focused_window = None;
                     state.events.push(WaywinEvent::WindowEvent {
                         event: WindowEvent::PointerLeft,
                         window_id: id,
@@ -69,7 +89,7 @@ impl Dispatch<WlPointer, ()> for WaywinState {
                 surface_x,
                 surface_y,
             } => {
-                let Some(id) = state.pointer.focused_window else {
+                let Some(id) = pointer_state.focused_window else {
                     log::warn!("recieved a pointer motion event while no window is focused");
                     return;
                 };
@@ -84,7 +104,7 @@ impl Dispatch<WlPointer, ()> for WaywinState {
                 button,
                 state: WEnum::Value(ButtonState::Pressed),
             } => {
-                let Some(id) = state.pointer.focused_window else {
+                let Some(id) = pointer_state.focused_window else {
                     log::warn!("recieved a pointer button down event while no window is focused");
                     return;
                 };
@@ -102,7 +122,7 @@ impl Dispatch<WlPointer, ()> for WaywinState {
                 button,
                 state: WEnum::Value(ButtonState::Released),
             } => {
-                let Some(id) = state.pointer.focused_window else {
+                let Some(id) = pointer_state.focused_window else {
                     log::warn!("recieved a pointer button up event while no window is focused");
                     return;
                 };
@@ -127,7 +147,7 @@ impl Dispatch<WlPointer, ()> for WaywinState {
                 axis: WEnum::Value(axis),
                 value,
             } => {
-                let Some(id) = state.pointer.focused_window else {
+                let Some(id) = pointer_state.focused_window else {
                     log::warn!("recieved a pointer scroll event while no window is focused");
                     return;
                 };

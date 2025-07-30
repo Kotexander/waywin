@@ -22,7 +22,7 @@ use wayland_protocols::{
 };
 
 mod keyboard;
-mod pointer;
+pub mod pointer;
 mod proxy;
 
 pub struct WaywinState {
@@ -33,8 +33,8 @@ pub struct WaywinState {
     pub viewporter: Option<WpViewporter>,
     pub scaling: Option<WpFractionalScaleManagerV1>,
 
-    pub keyboard: KeyboardState,
-    pub pointer: PointerState,
+    pub keyboard_state: KeyboardState,
+    pub pointer_state: Arc<Mutex<PointerState>>,
 
     pub qhandle: QueueHandle<Self>,
     pub connection: Connection,
@@ -71,6 +71,7 @@ impl WaywinState {
         let scaling = globals.bind(&qhandle, 1..=1, ()).ok();
 
         let relative_pointer_manager = globals.bind(&qhandle, 1..=1, ()).ok();
+        let pointer_constraints = globals.bind(&qhandle, 1..=1, ()).ok();
 
         Ok((
             Self {
@@ -81,11 +82,14 @@ impl WaywinState {
                 viewporter,
                 scaling,
 
-                pointer: PointerState {
+                pointer_state: Arc::new(Mutex::new(PointerState {
+                    pointer: None,
+                    relative_pointer: None,
+                    focused_window: None,
                     relative_pointer_manager,
-                    ..Default::default()
-                },
-                keyboard: KeyboardState::default(),
+                    pointer_constraints,
+                })),
+                keyboard_state: KeyboardState::default(),
 
                 connection,
                 qhandle,
@@ -100,19 +104,6 @@ impl WaywinState {
 }
 impl Drop for WaywinState {
     fn drop(&mut self) {
-        if let Some(s) = self.pointer.pointer.take() {
-            s.release()
-        }
-        if let Some(s) = self.pointer.relative_pointer.take() {
-            s.destroy()
-        }
-        if let Some(s) = self.keyboard.keyboard.take() {
-            s.release()
-        }
-        if let Some(s) = self.pointer.relative_pointer_manager.take() {
-            s.destroy()
-        }
-
         if let Some(s) = self.scaling.take() {
             s.destroy();
         }
