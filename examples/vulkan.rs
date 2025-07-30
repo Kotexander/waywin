@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("{event:#?}");
         }
 
-        app.event(&event, running);
+        app.handle_event(&event, running);
     });
 
     Ok(())
@@ -129,7 +129,7 @@ impl RenderContext {
                     image_format,
                     image_extent: window_size.into(),
                     image_usage: ImageUsage::COLOR_ATTACHMENT,
-                    present_mode: vulkano::swapchain::PresentMode::Mailbox,
+                    present_mode: vulkano::swapchain::PresentMode::Fifo,
                     composite_alpha: surface_capabilities
                         .supported_composite_alpha
                         .into_iter()
@@ -367,7 +367,7 @@ impl App {
             rcx,
         }
     }
-    fn event(&mut self, event: &WaywinEvent, running: &mut bool) {
+    fn handle_event(&mut self, event: &WaywinEvent, running: &mut bool) {
         match event {
             WaywinEvent::WindowEvent {
                 event,

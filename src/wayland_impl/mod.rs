@@ -36,15 +36,11 @@ impl Waywin {
             .run(None, &mut self.state, |state| {
                 state.windows.retain(|window| {
                     if let Some(window) = window.upgrade() {
-                        let curr_state = window.state.lock().unwrap();
-                        let mut prev_state = window.prev_state.lock().unwrap();
+                        let mut window = window.lock().unwrap();
 
-                        let scaled = prev_state.scale != curr_state.scale;
-                        let resized = prev_state.size != curr_state.size;
-                        *prev_state = *curr_state;
-
-                        drop(curr_state);
-                        drop(prev_state);
+                        let scaled = window.prev_state.scale != window.state.scale;
+                        let resized = window.prev_state.size != window.state.size;
+                        window.prev_state = window.state;
 
                         if scaled {
                             state.events.push(WaywinEvent::WindowEvent {

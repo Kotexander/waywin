@@ -30,7 +30,7 @@ impl Dispatch<WlRegistry, GlobalListContents> for WaywinState {
         _conn: &Connection,
         _qhandle: &wayland_client::QueueHandle<Self>,
     ) {
-        /* react to dynamic global events here */
+        // TODO: react to dynamic global
     }
 }
 impl Dispatch<XdgWmBase, ()> for WaywinState {

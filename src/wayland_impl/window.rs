@@ -3,12 +3,10 @@ use crate::event::{WaywinEvent, WindowEvent};
 use raw_window_handle as rwh;
 use std::{
     ptr::NonNull,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex, Weak,
-    },
+    sync::{Arc, Mutex, Weak},
 };
 use wayland_client::{
+    delegate_noop,
     protocol::{
         wl_callback::{self, WlCallback},
         wl_surface::{self, WlSurface},
@@ -53,56 +51,37 @@ struct PendingConfigure {
     pub size: Option<(i32, i32)>,
 }
 
-pub struct WindowInner {
+pub struct WindowState {
     surface: WlSurface,
     xdg_surface: XdgSurface,
     toplevel: XdgToplevel,
+
     // make sure `XdgWmBase` isn't destroyed while this window is alive
-    _xdg_base: Arc<super::state::XdgWmBaseDropper>,
+    _xdg_base: Arc<super::state::OwnedXdgWmBase>,
 
-    decoration: Option<ZxdgToplevelDecorationV1>,
+    pub state: State,
+    pub prev_state: State,
+    configure: PendingConfigure,
+
+    // title: String,
+    fullscreen: bool,
+
+    redraw: bool,
+
     viewport_scaling: Option<(WpViewport, WpFractionalScaleV1)>,
-
-    // qhandle: QueueHandle<WaywinState>,
-    // frame: AtomicBool,
-    redraw: AtomicBool,
-    fullscreen: AtomicBool,
-
-    pub state: Mutex<State>,
-    pub prev_state: Mutex<State>,
-    configure: Mutex<PendingConfigure>,
-
-    // for HasDisplayHandle
-    connection: Connection,
-    signal: calloop::LoopSignal,
+    decoration: Option<ZxdgToplevelDecorationV1>,
 }
-impl WindowInner {
+impl WindowState {
+    pub fn reset_redraw(&mut self) -> bool {
+        let redraw = self.redraw;
+        self.redraw = false;
+        redraw
+    }
     pub fn id(&self) -> usize {
         self.surface.id().as_ptr() as usize
     }
-    // pub fn frame(self: &Arc<Self>) {
-    //     if self
-    //         .frame
-    //         .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
-    //         .is_ok()
-    //     {
-    //         self.surface.frame(&self.qhandle, Arc::downgrade(self));
-    //     }
-    // }
-    pub fn set_redraw(&self) {
-        self.redraw.store(true, Ordering::Relaxed);
-        self.signal.wakeup();
-        // self.inner.frame();
-    }
-    pub fn reset_redraw(&self) -> bool {
-        let ok = self
-            .redraw
-            .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
-            .is_ok();
-        ok
-    }
 }
-impl Drop for WindowInner {
+impl Drop for WindowState {
     fn drop(&mut self) {
         if let Some((viewport, scaling)) = &self.viewport_scaling {
             scaling.destroy();
@@ -118,13 +97,20 @@ impl Drop for WindowInner {
 }
 
 pub struct Window {
-    inner: Arc<WindowInner>,
+    state: Arc<Mutex<WindowState>>,
+
+    signal: calloop::LoopSignal,
+
+    // for HasDisplayHandle
+    connection: Connection,
+    // for id and HasWindowHandle
+    surface: WlSurface,
 }
 impl Window {
     pub fn new(waywin: &mut Waywin, title: &str) -> Result<Self, String> {
-        // this freeze might not be needed since a window shouldn't be created while the event queue is polled
         let freeze = waywin.state.qhandle.freeze();
-        let inner = Arc::new_cyclic(|weak| {
+
+        let state = Arc::new_cyclic(|weak| {
             let surface = {
                 waywin
                     .state
@@ -157,106 +143,115 @@ impl Window {
                 .zip(waywin.state.scaling.as_ref())
                 .map(|(viewporter, scaling)| {
                     (
-                        viewporter.get_viewport(&surface, &waywin.state.qhandle, weak.clone()),
+                        viewporter.get_viewport(&surface, &waywin.state.qhandle, ()),
                         scaling.get_fractional_scale(&surface, &waywin.state.qhandle, weak.clone()),
                     )
                 });
-
-            surface.commit();
 
             let state = State {
                 size: (800, 600),
                 scale: 1.0,
             };
-            let configure = PendingConfigure::default();
 
-            waywin.state.windows.push(weak.clone());
-
-            WindowInner {
+            Mutex::new(WindowState {
                 surface,
                 xdg_surface,
                 toplevel,
-                decoration,
-                connection: waywin.state.connection.clone(),
-                state: Mutex::new(state),
-                prev_state: Mutex::new(state),
-                configure: Mutex::new(configure),
-                // qhandle: waywin.qhandle.clone(),
-                // frame: AtomicBool::new(false),
-                redraw: AtomicBool::new(true),
-                fullscreen: AtomicBool::new(false),
-                viewport_scaling,
-                signal: waywin.event_loop.get_signal(),
                 _xdg_base: waywin.state.xdg_wm_base.clone(),
-            }
+                state,
+                prev_state: state,
+                configure: PendingConfigure { size: None },
+                redraw: true,
+                fullscreen: false,
+                viewport_scaling,
+                decoration,
+            })
         });
+        let surface = state.lock().unwrap().surface.clone();
+        let weak = Arc::downgrade(&state);
+
+        surface.commit();
+
+        waywin.state.windows.push(weak.clone());
+
         drop(freeze);
 
-        Ok(Self { inner })
+        Ok(Self {
+            surface,
+            state,
+            connection: waywin.state.connection.clone(),
+            signal: waywin.event_loop.get_signal(),
+        })
     }
 }
 impl Window {
     pub fn get_physical_size(&self) -> (u32, u32) {
-        self.inner.state.lock().unwrap().physical_size()
+        self.state.lock().unwrap().state.physical_size()
     }
     pub fn get_logical_size(&self) -> (f64, f64) {
-        self.inner.state.lock().unwrap().logical_size()
+        self.state.lock().unwrap().state.logical_size()
     }
     pub fn get_scale(&self) -> f64 {
-        self.inner.state.lock().unwrap().scale
+        self.state.lock().unwrap().state.scale
     }
     pub fn set_title(&self, title: &str) {
-        self.inner.toplevel.set_title(title.to_owned());
+        self.state
+            .lock()
+            .unwrap()
+            .toplevel
+            .set_title(title.to_owned());
     }
     pub fn request_redraw(&self) {
-        self.inner.set_redraw();
-        // self.inner.frame();
+        self.state.lock().unwrap().redraw = true;
+        self.signal.wakeup();
     }
     pub fn set_fullscreen(&self, fullscreen: bool) {
+        let mut state = self.state.lock().unwrap();
         if fullscreen {
-            self.inner.toplevel.set_fullscreen(None);
+            state.toplevel.set_fullscreen(None);
         } else {
-            self.inner.toplevel.unset_fullscreen();
+            state.toplevel.unset_fullscreen();
         }
-        // idk if this is the right ordering
-        self.inner.fullscreen.store(fullscreen, Ordering::Release);
+        state.fullscreen = fullscreen;
     }
     pub fn get_fullscreen(&self) -> bool {
-        // idk if this is the right ordering
-        self.inner.fullscreen.load(Ordering::Acquire)
+        self.state.lock().unwrap().fullscreen
     }
     pub fn id(&self) -> usize {
-        self.inner.id()
+        self.surface.id().as_ptr() as usize
     }
 }
 
 impl rwh::HasWindowHandle for Window {
     fn window_handle(&self) -> std::result::Result<rwh::WindowHandle<'_>, rwh::HandleError> {
-        let ptr = self.inner.surface.id().as_ptr();
+        let ptr = self.surface.id().as_ptr();
         let handle = rwh::WaylandWindowHandle::new(NonNull::new(ptr as *mut _).unwrap());
         unsafe { Ok(rwh::WindowHandle::borrow_raw(handle.into())) }
     }
 }
 impl rwh::HasDisplayHandle for Window {
     fn display_handle(&self) -> std::result::Result<rwh::DisplayHandle<'_>, rwh::HandleError> {
-        let ptr = self.inner.connection.display().id().as_ptr();
+        let ptr = self.connection.display().id().as_ptr();
         let handle = rwh::WaylandDisplayHandle::new(NonNull::new(ptr as *mut _).unwrap());
         unsafe { Ok(rwh::DisplayHandle::borrow_raw(handle.into())) }
     }
 }
 
-impl Dispatch<WlSurface, Weak<WindowInner>> for WaywinState {
+delegate_noop!(WaywinState:WpViewport);
+
+impl Dispatch<WlSurface, Weak<Mutex<WindowState>>> for WaywinState {
     fn event(
         _state: &mut Self,
         proxy: &WlSurface,
         event: <WlSurface as wayland_client::Proxy>::Event,
-        data: &Weak<WindowInner>,
+        data: &Weak<Mutex<WindowState>>,
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
         let Some(data) = data.upgrade() else {
             return;
         };
+        let mut data = data.lock().unwrap();
 
         match event {
             wl_surface::Event::Enter { output: _ } => {}
@@ -270,42 +265,40 @@ impl Dispatch<WlSurface, Weak<WindowInner>> for WaywinState {
 
                 // fallback if viewporter or fractional scaling is not supported
                 let factor = factor as f64;
-                let mut state = data.state.lock().unwrap();
                 proxy.set_buffer_scale(factor as i32);
-                state.scale = factor;
+                data.state.scale = factor;
             }
             wl_surface::Event::PreferredBufferTransform { transform: _ } => {}
             _ => unimplemented!(),
         }
     }
 }
-impl Dispatch<WlCallback, Weak<WindowInner>> for WaywinState {
+impl Dispatch<WlCallback, Weak<Mutex<WindowState>>> for WaywinState {
     fn event(
         _state: &mut Self,
         _proxy: &WlCallback,
         event: <WlCallback as wayland_client::Proxy>::Event,
-        weak: &Weak<WindowInner>,
+        data: &Weak<Mutex<WindowState>>,
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
-        let Some(_data) = weak.upgrade() else {
+        let Some(_data) = data.upgrade() else {
             return;
         };
         match event {
             wl_callback::Event::Done { callback_data: _ } => {
                 todo!()
-                // data.frame.store(false, Ordering::SeqCst);
             }
             _ => unimplemented!(),
         }
     }
 }
-impl Dispatch<XdgSurface, Weak<WindowInner>> for WaywinState {
+impl Dispatch<XdgSurface, Weak<Mutex<WindowState>>> for WaywinState {
     fn event(
         _state: &mut Self,
         proxy: &XdgSurface,
         event: <XdgSurface as wayland_client::Proxy>::Event,
-        data: &Weak<WindowInner>,
+        data: &Weak<Mutex<WindowState>>,
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
@@ -316,43 +309,46 @@ impl Dispatch<XdgSurface, Weak<WindowInner>> for WaywinState {
                 let Some(data) = data.upgrade() else {
                     return;
                 };
+                let mut data = data.lock().unwrap();
 
-                let mut configure = data.configure.lock().unwrap();
-                let mut state = data.state.lock().unwrap();
-                match configure.size {
+                match data.configure.size {
                     Some(configure_size) => {
-                        state.size = configure_size;
+                        data.state.size = configure_size;
                     }
-                    None => configure.size = Some(state.size),
+                    None => data.configure.size = Some(data.state.size),
                 }
                 if let Some((viewport, _)) = &data.viewport_scaling {
-                    viewport.set_destination(state.size.0, state.size.1);
+                    viewport.set_destination(data.state.size.0, data.state.size.1);
                 }
             }
             _ => unimplemented!(),
         }
     }
 }
-impl Dispatch<XdgToplevel, Weak<WindowInner>> for WaywinState {
+impl Dispatch<XdgToplevel, Weak<Mutex<WindowState>>> for WaywinState {
     fn event(
         state: &mut Self,
         _proxy: &XdgToplevel,
         event: <XdgToplevel as wayland_client::Proxy>::Event,
-        data: &Weak<WindowInner>,
+        data: &Weak<Mutex<WindowState>>,
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
         let Some(data) = data.upgrade() else {
             return;
         };
+        let mut data = data.lock().unwrap();
+
         match event {
             xdg_toplevel::Event::Configure {
                 width,
                 height,
                 states: _,
             } => {
-                if !(width == 0 && height == 0) {
-                    data.configure.lock().unwrap().size = Some((width, height))
+                if !(width == 0 || height == 0) {
+                    data.configure.size = Some((width, height))
+                } else {
+                    data.configure.size = None;
                 }
             }
             xdg_toplevel::Event::Close => {
@@ -374,48 +370,38 @@ impl Dispatch<XdgToplevel, Weak<WindowInner>> for WaywinState {
         }
     }
 }
-impl Dispatch<ZxdgToplevelDecorationV1, Weak<WindowInner>> for WaywinState {
+impl Dispatch<ZxdgToplevelDecorationV1, Weak<Mutex<WindowState>>> for WaywinState {
     fn event(
         _state: &mut Self,
         _proxy: &ZxdgToplevelDecorationV1,
         _event: <ZxdgToplevelDecorationV1 as Proxy>::Event,
-        _data: &Weak<WindowInner>,
+        _data: &Weak<Mutex<WindowState>>,
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
         // TODO
     }
 }
-impl Dispatch<WpViewport, Weak<WindowInner>> for WaywinState {
-    fn event(
-        _state: &mut Self,
-        _proxy: &WpViewport,
-        _event: <WpViewport as Proxy>::Event,
-        _data: &Weak<WindowInner>,
-        _conn: &Connection,
-        _qhandle: &QueueHandle<Self>,
-    ) {
-    }
-}
-impl Dispatch<WpFractionalScaleV1, Weak<WindowInner>> for WaywinState {
+
+impl Dispatch<WpFractionalScaleV1, Weak<Mutex<WindowState>>> for WaywinState {
     fn event(
         _state: &mut Self,
         _proxy: &WpFractionalScaleV1,
         event: <WpFractionalScaleV1 as Proxy>::Event,
-        data: &Weak<WindowInner>,
+        data: &Weak<Mutex<WindowState>>,
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
         let Some(data) = data.upgrade() else {
             return;
         };
+        let mut data = data.lock().unwrap();
 
         match event {
             wp_fractional_scale_v1::Event::PreferredScale { scale } => {
                 let scale = scale as f64 / 120.0;
 
-                let mut state = data.state.lock().unwrap();
-                state.scale = scale;
+                data.state.scale = scale;
             }
             _ => unimplemented!(),
         }

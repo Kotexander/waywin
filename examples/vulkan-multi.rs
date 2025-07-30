@@ -85,8 +85,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("{event:#?}");
         }
 
-        app.event(&event, running);
-        app2.event(&event, running);
+        app.handle_event(&event, running);
+        app2.handle_event(&event, running);
     });
 
     Ok(())
@@ -390,7 +390,7 @@ impl App {
             rcx,
         }
     }
-    fn event(&mut self, event: &WaywinEvent, running: &mut bool) {
+    fn handle_event(&mut self, event: &WaywinEvent, running: &mut bool) {
         match event {
             WaywinEvent::WindowEvent { event, window_id } if *window_id == self.rcx.window.id() => {
                 match event {
